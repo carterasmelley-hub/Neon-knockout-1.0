@@ -2577,6 +2577,13 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     if (livingOpp.length === 0 || livingAI.length === 0) return;
 
     const p = game.platform;
+    const totalAIUnits = Math.max(1, game.team2.length);
+    // Knockout clutch mode: if AI is down to 1-2 of 5, bias toward aggressive elimination plays.
+    const knockoutClutchAggro = (
+      isKnockoutMode() &&
+      totalAIUnits >= 5 &&
+      livingAI.length <= 2
+    ) ? (livingAI.length === 1 ? 1.0 : 0.62) : 0;
 
     // Internal AI knobs derived from existing DIFF values.
     const isEasy = config.difficulty === "EASY";
@@ -2626,6 +2633,13 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     coordStrength = clamp(coordStrength + aiMod.coordAdd, 0.06, 0.99);
     spacingStrength = clamp(spacingStrength + aiMod.spacingAdd, 0.05, 0.95);
     randomness = clamp(randomness + aiMod.randomnessAdd, 0.01, 0.55);
+    if (knockoutClutchAggro > 0){
+      candidatesCount = clamp(Math.round(candidatesCount + 4 + 4 * knockoutClutchAggro), 5, 24);
+      lookahead = clamp(lookahead + 0.08 + 0.09 * knockoutClutchAggro, 0.16, 0.97);
+      coordStrength = clamp(coordStrength + 0.05 + 0.05 * knockoutClutchAggro, 0.06, 0.99);
+      spacingStrength = clamp(spacingStrength - (0.10 + 0.12 * knockoutClutchAggro), 0.05, 0.95);
+      randomness = clamp(randomness * (1 - (0.18 + 0.18 * knockoutClutchAggro)), 0.01, 0.55);
+    }
 
     const edgeRef = (p.shape === "circle")
       ? Math.max(26, p.radius * 0.28)
@@ -2687,10 +2701,24 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     for (const opp of livingOpp){
       let px = opp.x;
       let py = opp.y;
+      let intentDirX = 0;
+      let intentDirY = 0;
+      let intentMag = 0;
+      let intentEndX = opp.x;
+      let intentEndY = opp.y;
       if (opp.target && isPointInsideArenaForRender(opp.target.x, opp.target.y)){
+        const ivx = opp.target.x - opp.x;
+        const ivy = opp.target.y - opp.y;
+        const ilen = Math.hypot(ivx, ivy) || 1;
+        intentMag = clamp(ilen / Math.max(1, game.maxMoveDist), 0, 1);
+        intentDirX = ivx / ilen;
+        intentDirY = ivy / ilen;
         const tLead = clamp(lookahead + diff.intercept * 0.18, 0.16, 0.92);
         px = lerp(opp.x, opp.target.x, tLead);
         py = lerp(opp.y, opp.target.y, tLead);
+        const tIntent = clamp(0.30 + lookahead * 0.48 + diff.intercept * 0.14, 0.30, 0.94);
+        intentEndX = lerp(opp.x, opp.target.x, tIntent);
+        intentEndY = lerp(opp.y, opp.target.y, tIntent);
       }
       px += rand(-predNoise, predNoise);
       py += rand(-predNoise, predNoise);
@@ -2706,7 +2734,17 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         const outward = Math.max(0, (mdx * eEdge.nx + mdy * eEdge.ny) / Math.max(1, game.maxMoveDist));
         danger += outward * 0.72;
       }
-      enemyMeta.set(opp, { pred, eEdge, vulnerability, danger });
+      danger += intentMag * 0.20;
+      const intentEnd = clampPointToPlatformForUnit(opp, intentEndX, intentEndY);
+      enemyMeta.set(opp, {
+        pred,
+        eEdge,
+        vulnerability,
+        danger,
+        intentDir: { x: intentDirX, y: intentDirY },
+        intentMag,
+        intentEnd
+      });
     }
 
     let finisherEnemy = livingOpp[0];
@@ -2775,6 +2813,11 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         const d = Math.hypot(pred.x - a.x, pred.y - a.y);
         let s = meta.vulnerability * 42 + meta.danger * 34 +
           (1 - clamp(d / (game.maxMoveDist * 1.6), 0, 1)) * 28;
+        if (isHard){
+          s += meta.intentMag * 18;
+          const toThreat = Math.hypot(meta.intentEnd.x - a.x, meta.intentEnd.y - a.y);
+          s += (1 - clamp(toThreat / (game.maxMoveDist * 1.35), 0, 1)) * 14;
+        }
         if (role === "finisher") s += meta.vulnerability * 56;
         else if (role === "disruptor") s += meta.danger * 52;
         else s += (1 - meta.vulnerability) * 8;
@@ -2817,10 +2860,26 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       const av = normalize(ap.x - a.x, ap.y - a.y);
       const perp = { x: -av.y, y: av.x };
 
-      const attackFar = game.maxMoveDist * clamp((0.78 + diff.pressure * 0.12) * aiMod.attackDistMul, 0.64, 0.98);
-      const attackMid = game.maxMoveDist * clamp((0.48 + diff.fastShotBias * 0.16) * aiMod.attackDistMul, 0.36, 0.72);
+      const clutchAttackBoost = 1 + knockoutClutchAggro * 0.22;
+      const attackFar = game.maxMoveDist * clamp((0.78 + diff.pressure * 0.12) * aiMod.attackDistMul * clutchAttackBoost, 0.64, 0.98);
+      const attackMid = game.maxMoveDist * clamp((0.48 + diff.fastShotBias * 0.16) * aiMod.attackDistMul * (1 + knockoutClutchAggro * 0.20), 0.36, 0.74);
       addCandidate(out, a, a.x + av.x * attackFar, a.y + av.y * attackFar, assignedEnemy, "direct_far");
       addCandidate(out, a, a.x + av.x * attackMid, a.y + av.y * attackMid, assignedEnemy, "direct_mid");
+      if (isHard){
+        const am = enemyMeta.get(assignedEnemy);
+        if (assignedEnemy.target && am.intentMag > 0.12){
+          const ix = lerp(am.pred.x, am.intentEnd.x, 0.52);
+          const iy = lerp(am.pred.y, am.intentEnd.y, 0.52);
+          const behind = (a.r + assignedEnemy.r) * 0.62 + 9;
+          addCandidate(out, a, ix - am.intentDir.x * behind, iy - am.intentDir.y * behind, assignedEnemy, "counter_lane");
+
+          const sideSign = ((enemyIds.get(assignedEnemy) || 0) % 2 === 0) ? 1 : -1;
+          const sideX = -am.intentDir.y * sideSign;
+          const sideY = am.intentDir.x * sideSign;
+          const shoulder = a.r + assignedEnemy.r + 13;
+          addCandidate(out, a, ix + sideX * shoulder, iy + sideY * shoulder, assignedEnemy, "counter_shoulder");
+        }
+      }
 
       if (assignedEnemy.target){
         const lp = clamp(0.18 + lookahead * 0.42, 0.18, 0.72);
@@ -2903,23 +2962,33 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       const outwardSelf = Math.max(0, (moveX * selfEdge.nx + moveY * selfEdge.ny) / Math.max(1, game.maxMoveDist));
 
       let score = 0;
-      const selfRiskPenalty = (30 + 34 * coordStrength) * selfRisk * aiMod.riskPenaltyMul;
-      const outwardPenalty = (20 + 28 * coordStrength) * outwardSelf * aiMod.riskPenaltyMul;
+      const clutchRiskCut = 1 - knockoutClutchAggro * 0.42;
+      const selfRiskPenalty = (30 + 34 * coordStrength) * selfRisk * aiMod.riskPenaltyMul * clutchRiskCut;
+      const outwardPenalty = (20 + 28 * coordStrength) * outwardSelf * aiMod.riskPenaltyMul * clutchRiskCut;
       score -= selfRiskPenalty;
       score -= outwardPenalty;
-      score += (role === "support" ? 13 : 8) * centerScore(a, cand.x, cand.y);
+      score += (role === "support" ? 13 : 8) * centerScore(a, cand.x, cand.y) * (1 - knockoutClutchAggro * 0.55);
       score += centerScore(a, cand.x, cand.y) * aiMod.centerBias * 18;
 
       const assignedPred = enemyMeta.get(assignedEnemy).pred;
       const assignedDist = Math.hypot(cand.x - assignedPred.x, cand.y - assignedPred.y);
       score += clamp(1 - assignedDist / (game.maxMoveDist * 1.05), 0, 1) *
         (role === "finisher" ? 20 : role === "disruptor" ? 16 : 11);
+      if (isHard){
+        const am = enemyMeta.get(assignedEnemy);
+        if (assignedEnemy.target && am.intentMag > 0.08){
+          const lane = pointSegData(assignedEnemy.x, assignedEnemy.y, assignedEnemy.target.x, assignedEnemy.target.y, cand.x, cand.y);
+          const laneR = a.r + assignedEnemy.r + 20;
+          const laneBlock = clamp(1 - Math.sqrt(lane.d2) / laneR, 0, 1);
+          score += laneBlock * (12 + 18 * diff.intercept);
+        }
+      }
       // Discourage hard reversals; prefer engage or sidestep unless safety is critical.
       const towardAssigned = normalize(assignedPred.x - a.x, assignedPred.y - a.y);
       const engageDot = moveDir.x * towardAssigned.x + moveDir.y * towardAssigned.y;
       const retreatAllowance = clamp((selfRisk - 0.55) / 0.45, 0, 1);
       if (engageDot < -0.12){
-        const antiReverse = (0.12 - engageDot) * (24 + 36 * coordStrength) * (1 - retreatAllowance * 0.72);
+        const antiReverse = (0.12 - engageDot) * (24 + 36 * coordStrength) * (1 - retreatAllowance * 0.72) * (1 + knockoutClutchAggro * 0.24);
         score -= antiReverse;
       }
       if (isHard){
@@ -2952,6 +3021,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
 
         let hitScore = 14 + towardOut * 46 + edgeSwing * 34 + meta.vulnerability * 28;
         hitScore += koPotential * (isHard ? 155 : isNormal ? 82 : 48);
+        hitScore += knockoutClutchAggro * (22 + 28 * koPotential + 10 * towardOut);
         if (opp === finisherEnemy) hitScore += 12;
         if (role === "disruptor" && opp === disruptorEnemy) hitScore += 10;
         if (meta.vulnerability > 0.58) hitScore += 9 * meta.vulnerability;
@@ -2960,7 +3030,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
 
       // Allow calculated risk-taking when a probable killshot exists.
       const riskOverride = clamp(
-        maxKOPotential * (isHard ? 0.98 : isNormal ? 0.58 : 0.26),
+        maxKOPotential * ((isHard ? 0.98 : isNormal ? 0.58 : 0.26) + knockoutClutchAggro * 0.32),
         0, 0.95
       );
       score += (selfRiskPenalty + outwardPenalty) * riskOverride;
@@ -2970,6 +3040,21 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         const lane = pointSegData(threat.x, threat.y, allyAtRisk.x, allyAtRisk.y, cand.x, cand.y);
         const laneR = a.r + 26;
         score += clamp(1 - Math.sqrt(lane.d2) / laneR, 0, 1) * (9 + 24 * coordStrength);
+      }
+      if (isHard){
+        // Penalize ending inside obvious incoming enemy lines unless we are actively engaging.
+        for (const opp of livingOpp){
+          const om = enemyMeta.get(opp);
+          if (!opp.target || om.intentMag <= 0.12) continue;
+          const lane = pointSegData(opp.x, opp.y, opp.target.x, opp.target.y, cand.x, cand.y);
+          const laneR = a.r + opp.r + 16;
+          const inLane = clamp(1 - Math.sqrt(lane.d2) / laneR, 0, 1);
+          if (inLane <= 0) continue;
+          const engage = normalize(opp.x - a.x, opp.y - a.y);
+          const engageDot2 = moveDir.x * engage.x + moveDir.y * engage.y;
+          const lanePenalty = inLane * (8 + 12 * om.intentMag) * (engageDot2 < 0.10 ? 1.0 : 0.35);
+          score -= lanePenalty;
+        }
       }
 
       const spacingR = a.r * 4 + 30;
@@ -3007,8 +3092,8 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       return best;
     };
 
-    const refineCount = isHard ? 8 : isNormal ? 3 : 0;
-    const refineRadius = isHard ? 34 : 22;
+    const refineCount = isHard ? 11 : isNormal ? 3 : 0;
+    const refineRadius = isHard ? 38 : 22;
     const aiOrder = [...livingAI].sort((a, b) => unitPotential(b) - unitPotential(a));
     for (const a of aiOrder){
       const role = roleFor.get(a) || "hunter";
