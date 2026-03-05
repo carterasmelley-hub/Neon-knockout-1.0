@@ -331,33 +331,33 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   };
   const ONBOARDING_TUTORIALS = Object.freeze({
     KNOCKOUT: Object.freeze({
-      title: "KNOCKOUT QUICK START",
-      subtitle: "Goal: knock every opponent off the map.",
+      title: "KNOCKOUT",
+      subtitle: "GOAL: Knock all opponents off the arena.",
       tips: Object.freeze([
-        "1) Tap a unit, then tap a destination to set its arrow.",
-        "2) Set all arrows, then press START to resolve.",
-        "3) Use body checks to push enemies out of bounds.",
-        "4) Walls and bumpers can redirect movement."
+        "1) Tap a unit, then tap a spot to aim it.",
+        "2) Set all arrows, then press START.",
+        "3) Push opponents out of bounds.",
+        "4) Walls and bumpers can change movement."
       ])
     }),
     FOOTBALL: Object.freeze({
-      title: "FOOTBALL QUICK START",
-      subtitle: "Goal: carry the ball into the opponent end zone.",
+      title: "FOOTBALL",
+      subtitle: "GOAL: Bring the ball to the opponent end zone.",
       tips: Object.freeze([
         "1) Move onto the ball to pick it up.",
-        "2) The carrier keeps the ball until stolen or knocked off.",
-        "3) Reach the far end zone to score the round.",
-        "4) Use teammates to block lanes and protect the carrier."
+        "2) The carrier keeps the ball until knocked off.",
+        "3) Reach the far end zone to score.",
+        "4) Use teammates to block defenders."
       ])
     }),
     KEEP_AWAY: Object.freeze({
-      title: "KEEP AWAY QUICK START",
-      subtitle: "Goal: hold the ball for 3 straight turns.",
+      title: "KEEP AWAY",
+      subtitle: "GOAL: Hold the ball for 3 turns.",
       tips: Object.freeze([
-        "1) Move onto the ball to become the carrier.",
-        "2) Keep possession for 3 consecutive turns to win.",
-        "3) Knockouts are active - push enemies off when possible.",
-        "4) If the carrier is knocked off, ball resets to center."
+        "1) Move onto the ball to pick it up.",
+        "2) Hold the ball for 3 turns to win.",
+        "3) Push opponents away to protect the carrier.",
+        "4) If the carrier falls off, the ball resets to center."
       ])
     })
   });
@@ -533,6 +533,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     SETUP: "setup",
     SETTINGS: "settings",
     CREDITS: "credits",
+    HELP: "help",
     GAME: "game",
     PAUSE: "pause",
     WIN: "win"
@@ -545,6 +546,8 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     if (transition.active) return;
     if (newState === State.CREDITS){
       creditsScrollY = 0;
+    } else if (newState === State.HELP){
+      helpScrollY = 0;
     } else if (newState === State.SETTINGS){
       settingsScrollY = 0;
     }
@@ -564,6 +567,8 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   let settingsScrollMax = 0;
   let creditsScrollY = 0;
   let creditsScrollMax = 0;
+  let helpScrollY = 0;
+  let helpScrollMax = 0;
 
   const ui = { buttons: [],
     savedButtons: null,
@@ -653,6 +658,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   const setupTouchScroll = { active:false, pointerId:null, startY:0, lastY:0, moved:false };
   const settingsTouchScroll = { active:false, pointerId:null, startY:0, lastY:0, moved:false };
   const creditsTouchScroll = { active:false, pointerId:null, startY:0, lastY:0, moved:false };
+  const helpTouchScroll = { active:false, pointerId:null, startY:0, lastY:0, moved:false };
 
   function canvasToWorld(e){
     const rect = canvas.getBoundingClientRect();
@@ -680,6 +686,13 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     creditsTouchScroll.lastY = 0;
     creditsTouchScroll.moved = false;
   }
+  function clearHelpTouchScroll(){
+    helpTouchScroll.active = false;
+    helpTouchScroll.pointerId = null;
+    helpTouchScroll.startY = 0;
+    helpTouchScroll.lastY = 0;
+    helpTouchScroll.moved = false;
+  }
 
   function pointInSetupScrollArea(x, y){
     if (state !== State.SETUP) return false;
@@ -694,6 +707,11 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   function pointInCreditsScrollArea(x, y){
     if (state !== State.CREDITS) return false;
     const { viewX, viewY, viewW, viewH } = getCreditsLayout();
+    return x >= viewX && x <= (viewX + viewW) && y >= viewY && y <= (viewY + viewH);
+  }
+  function pointInHelpScrollArea(x, y){
+    if (state !== State.HELP) return false;
+    const { viewX, viewY, viewW, viewH } = getHelpLayout();
     return x >= viewX && x <= (viewX + viewW) && y >= viewY && y <= (viewY + viewH);
   }
 
@@ -755,6 +773,22 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         }
       }
     }
+    if (helpTouchScroll.active && state === State.HELP && input.down && e.pointerId === helpTouchScroll.pointerId){
+      const dy = input.y - helpTouchScroll.lastY;
+      helpTouchScroll.lastY = input.y;
+
+      if (Math.abs(input.y - helpTouchScroll.startY) > 6){
+        helpTouchScroll.moved = true;
+        if (ui.pressed) ui.pressed = null;
+      }
+
+      if (helpScrollMax > 0 && dy !== 0){
+        const nextY = clamp(helpScrollY - dy, 0, helpScrollMax);
+        if (nextY !== helpScrollY){
+          helpScrollY = nextY;
+        }
+      }
+    }
   }
 
   function handlePointerDown(e){
@@ -769,6 +803,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     clearSetupTouchScroll();
     clearSettingsTouchScroll();
     clearCreditsTouchScroll();
+    clearHelpTouchScroll();
     if (isTouchLikePointer(e) && pointInSetupScrollArea(input.x, input.y) && setupScrollMax > 0){
       setupTouchScroll.active = true;
       setupTouchScroll.pointerId = e.pointerId;
@@ -789,6 +824,13 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       creditsTouchScroll.startY = input.y;
       creditsTouchScroll.lastY = input.y;
       creditsTouchScroll.moved = false;
+    }
+    if (isTouchLikePointer(e) && pointInHelpScrollArea(input.x, input.y) && helpScrollMax > 0){
+      helpTouchScroll.active = true;
+      helpTouchScroll.pointerId = e.pointerId;
+      helpTouchScroll.startY = input.y;
+      helpTouchScroll.lastY = input.y;
+      helpTouchScroll.moved = false;
     }
 
     // First-run onboarding overlay blocks all gameplay/UI input until dismissed.
@@ -826,9 +868,11 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const draggedSetup = (setupTouchScroll.active && e.pointerId === setupTouchScroll.pointerId && setupTouchScroll.moved);
     const draggedSettings = (settingsTouchScroll.active && e.pointerId === settingsTouchScroll.pointerId && settingsTouchScroll.moved);
     const draggedCredits = (creditsTouchScroll.active && e.pointerId === creditsTouchScroll.pointerId && creditsTouchScroll.moved);
+    const draggedHelp = (helpTouchScroll.active && e.pointerId === helpTouchScroll.pointerId && helpTouchScroll.moved);
     clearSetupTouchScroll();
     clearSettingsTouchScroll();
     clearCreditsTouchScroll();
+    clearHelpTouchScroll();
 
     if (state === State.GAME && onboarding.active){
       ui.pressed = null;
@@ -839,7 +883,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       return;
     }
 
-    if (draggedSetup || draggedSettings || draggedCredits){
+    if (draggedSetup || draggedSettings || draggedCredits || draggedHelp){
       ui.pressed = null;
       return;
     }
@@ -862,6 +906,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     clearSetupTouchScroll();
     clearSettingsTouchScroll();
     clearCreditsTouchScroll();
+    clearHelpTouchScroll();
     canvas.releasePointerCapture?.(e.pointerId);
   }
 
@@ -902,6 +947,10 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       else if (state === State.SETTINGS){
         if (settingsBackState === State.PAUSE){ state = State.PAUSE; ui.buttons = []; }
         else { goTo(State.MENU); }
+      }
+      else if (state === State.HELP){
+        if (helpBackState){ goTo(helpBackState); }
+        else { goTo(State.SETTINGS); }
       }
       else if (state === State.WIN) goTo(State.MENU);
       else if (state === State.CREDITS || state === State.SETUP) goTo(State.MENU);
@@ -1144,7 +1193,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   function beginPlayerGate(team, msg){
     game.gate = team;
     game.gateTeam = team;
-    game.gateMsg = msg || `PASS DEVICE TO PLAYER ${team}`;
+    game.gateMsg = msg || `PLAYER ${team} START`;
     game.gateHold = 0.12;
     game.selected = -1;
     ui.pressed = null;
@@ -1546,7 +1595,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     // Multiplayer privacy gate
     clearPlayerGate();
     if (usesPrivacyGate()){
-      beginPlayerGate(1, "PASS DEVICE TO PLAYER 1");
+      beginPlayerGate(1, "PLAYER 1 START");
     }
 
     clearPlans(false);
@@ -2253,11 +2302,66 @@ function lerp(a, b, t){ return a + (b - a) * t; }
             }
             if (nearest){
               const away = normalize(a.x - nearest.x, a.y - nearest.y);
-              tx = a.x + away.x * game.maxMoveDist * (0.88 * aiMod.attackDistMul) + rand(-20, 20);
-              ty = a.y + away.y * game.maxMoveDist * (0.88 * aiMod.attackDistMul) + rand(-20, 20);
+              const carryStride = game.maxMoveDist * clamp(0.62 * aiMod.attackDistMul, 0.44, 0.72);
+              tx = a.x + away.x * carryStride + rand(-14, 14);
+              ty = a.y + away.y * carryStride + rand(-14, 14);
             } else {
               tx = centerBias.x + rand(-p.w * 0.16, p.w * 0.16);
               ty = centerBias.y + rand(-p.h * 0.16, p.h * 0.16);
+            }
+
+            // Keep Away carrier safety:
+            // pull inward near edges and suppress outward plans to avoid self-elims.
+            let edgeRisk = 0;
+            if (p.shape === "circle"){
+              const ux = a.x - p.cx, uy = a.y - p.cy;
+              const edgeR = Math.max(1, p.radius - a.r - 4);
+              const edgeFrac = Math.hypot(ux, uy) / edgeR;
+              edgeRisk = clamp((edgeFrac - 0.70) / 0.25, 0, 1);
+            } else {
+              const minEdge = Math.min(
+                a.x - (p.x + a.r),
+                (p.x + p.w - a.r) - a.x,
+                a.y - (p.y + a.r),
+                (p.y + p.h - a.r) - a.y
+              );
+              const edgeBand = 18 + Math.min(p.w, p.h) * 0.08;
+              edgeRisk = clamp(1 - (minEdge / edgeBand), 0, 1);
+            }
+
+            if (edgeRisk > 0){
+              const inwardPull = 0.52 + edgeRisk * 0.38;
+              tx = lerp(tx, p.cx, inwardPull);
+              ty = lerp(ty, p.cy, inwardPull);
+            }
+
+            const fromCenterX = a.x - p.cx, fromCenterY = a.y - p.cy;
+            const fromCenterD = Math.hypot(fromCenterX, fromCenterY);
+            if (fromCenterD > 1){
+              const nx = fromCenterX / fromCenterD;
+              const ny = fromCenterY / fromCenterD;
+              const mvx = tx - a.x, mvy = ty - a.y;
+              const outward = mvx * nx + mvy * ny;
+              if (outward > 0){
+                const cut = outward * (0.86 + 0.12 * diff.edgeSafety) + 10 * edgeRisk;
+                tx -= nx * cut;
+                ty -= ny * cut;
+              }
+            }
+
+            if (p.shape === "circle"){
+              const dx = tx - p.cx, dy = ty - p.cy;
+              const d = Math.hypot(dx, dy) || 1;
+              const safeR = Math.max(0, p.radius - a.r - (18 + p.radius * 0.18));
+              if (d > safeR){
+                const s = safeR / d;
+                tx = p.cx + dx * s;
+                ty = p.cy + dy * s;
+              }
+            } else {
+              const safeInset = 20 + Math.min(p.w, p.h) * 0.10;
+              tx = clamp(tx, p.x + a.r + safeInset, p.x + p.w - a.r - safeInset);
+              ty = clamp(ty, p.y + a.r + safeInset, p.y + p.h - a.r - safeInset);
             }
           } else {
             const offset = (a.y <= carrier.y) ? -1 : 1;
@@ -3023,6 +3127,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   // ============================================================
   let paused = false;
   let settingsBackState = null; // where Settings returns (MENU or PAUSE)
+  let helpBackState = null; // where Help returns (typically SETTINGS)
   let revealTimer = 0;
   let revealActive = false;
   let revealPending = false;
@@ -3186,16 +3291,26 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const bh = 54;
     const x = Math.floor(W/2 - bw/2);
     let y = Math.floor(H * 0.48);
+    const quickW = Math.floor(bw * 1.10);
+    const quickH = Math.floor(bh * 1.10);
+    const quickX = Math.floor(W/2 - quickW/2);
 
-    addButton("quick", x, y, bw, bh, "START", () => {
+    addButton("quick", quickX, y, quickW, quickH, "START", () => {
       startNewGame({ players:1, mode:"KNOCKOUT", difficulty:"NORMAL", stage:"CLASSIC", series:"BO3", speed:"1X", modifier:"STANDARD" });
     });
     y += 70;
     addButton("start", x, y, bw, bh, "CUSTOM GAME", () => goTo(State.SETUP));
     y += 70;
-    addButton("settings", x, y, bw, bh, "SETTINGS", () => goTo(State.SETTINGS));
+    addButton("settings", x, y, bw, bh, "SETTINGS", () => {
+      settingsBackState = null;
+      helpBackState = null;
+      goTo(State.SETTINGS);
+    });
     y += 70;
-    addButton("credits", x, y, bw, bh, "CREDIT/HELP", () => goTo(State.CREDITS));
+    addButton("credits", x, y, bw, bh, "CREDITS", () => {
+      helpBackState = null;
+      goTo(State.CREDITS);
+    });
   }
 
   function getSetupLayout(){
@@ -3229,11 +3344,25 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   }
   function getCreditsLayout(){
     const panelW = Math.min(760, Math.floor(W * 0.90));
+    const panelH = clamp(Math.floor(H * 0.40), 240, 320);
+    const px = Math.floor(W/2 - panelW/2);
+    const py = Math.floor(clamp(H * 0.30, 104, Math.max(104, H - panelH - 180)));
+    const pad = 22;
+    const headerH = 64;
+    const footerH = 20;
+    const viewX = px + pad;
+    const viewY = py + headerH;
+    const viewW = panelW - pad*2 - 10;
+    const viewH = panelH - headerH - footerH;
+    return { panelW, panelH, px, py, pad, viewX, viewY, viewW, viewH };
+  }
+  function getHelpLayout(){
+    const panelW = Math.min(760, Math.floor(W * 0.90));
     const panelH = clamp(Math.floor(H * 0.52), 320, 430);
     const px = Math.floor(W/2 - panelW/2);
     const py = Math.floor(clamp(H * 0.26, 88, Math.max(88, H - panelH - 150)));
     const pad = 22;
-    const headerH = 72;
+    const headerH = 40;
     const footerH = 24;
     const viewX = px + pad;
     const viewY = py + headerH;
@@ -3342,11 +3471,21 @@ function lerp(a, b, t){ return a + (b - a) * t; }
 
   function buildSettingsUI(){
     ui.buttons = [];
-    const bw = Math.min(280, Math.floor(W * 0.38));
+    const { py, panelH, viewW } = getSettingsLayout();
     const bh = 50;
-    addButton("back", Math.floor(W/2 - bw/2), Math.floor(H * 0.74), bw, bh, "BACK", () => {
+    const gap = 14;
+    const footerW = Math.min(viewW, 620);
+    const bw = Math.floor((footerW - gap) / 2);
+    const bx = Math.floor(W/2 - footerW/2);
+    const by = Math.floor(Math.min(H - bh - 34, py + panelH + 24));
+    addButton("settings_back", bx, by, bw, bh, "BACK", () => {
+      helpBackState = null;
       if (settingsBackState === State.PAUSE){ state = State.PAUSE; ui.buttons = []; /* keep paused */ }
       else { goTo(State.MENU); }
+    });
+    addButton("settings_help", bx + bw + gap, by, bw, bh, "HELP", () => {
+      helpBackState = State.SETTINGS;
+      goTo(State.HELP);
     });
   }
 
@@ -3358,6 +3497,18 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const by = Math.floor(Math.min(H - bh - 34, py + panelH + 24));
     creditsScrollY = clamp(creditsScrollY, 0, creditsScrollMax);
     addButton("back", Math.floor(W/2 - bw/2), by, bw, bh, "BACK", () => goTo(State.MENU));
+  }
+  function buildHelpUI(){
+    ui.buttons = [];
+    const bw = Math.min(280, Math.floor(W * 0.38));
+    const bh = 50;
+    const { py, panelH } = getHelpLayout();
+    const by = Math.floor(Math.min(H - bh - 34, py + panelH + 24));
+    helpScrollY = clamp(helpScrollY, 0, helpScrollMax);
+    addButton("back", Math.floor(W/2 - bw/2), by, bw, bh, "BACK", () => {
+      if (helpBackState){ goTo(helpBackState); }
+      else { goTo(State.SETTINGS); }
+    });
   }
 
   function buildWinUI(){
@@ -3419,8 +3570,8 @@ function buildPauseUI(){
       beep(360, 0.05, "square", 0.035);
       resumeGame();
     }); y += 62;
-    add("pause_settings", y, "SETTINGS", () => { settingsBackState = State.PAUSE; state = State.SETTINGS; ui.buttons = []; buildSettingsUI(); }); y += 62;
-    add("pause_menu", y, "MAIN MENU", () => { paused = false; settingsBackState = null; ui.pauseButtons = []; goTo(State.MENU); });
+    add("pause_settings", y, "SETTINGS", () => { settingsBackState = State.PAUSE; helpBackState = null; state = State.SETTINGS; ui.buttons = []; buildSettingsUI(); }); y += 62;
+    add("pause_menu", y, "MAIN MENU", () => { paused = false; settingsBackState = null; helpBackState = null; ui.pauseButtons = []; goTo(State.MENU); });
   }
 
   // ============================================================
@@ -3660,6 +3811,13 @@ function updateGameplay(dt){
     
     // Keep AI targets stage-safe even if setup changes between frames.
     if (isSinglePlayerMode() && game.phase === "plan"){
+      const diffBase = DIFF[config.difficulty] || DIFF.NORMAL;
+      const aiMod = getAIModifierTuning();
+      const diff = {
+        ...diffBase,
+        edgeSafety: clamp(diffBase.edgeSafety + aiMod.edgeSafetyAdd, 0, 1),
+        circleSafety: clamp(diffBase.circleSafety + aiMod.edgeSafetyAdd * 0.9, 0, 1)
+      };
       for (const u of game.team2){
         if (!u.alive || !u.target) continue;
         if (isFootballMode() || isHockeyMode()){
@@ -3667,7 +3825,8 @@ function updateGameplay(dt){
           u.target.x = safe.x;
           u.target.y = safe.y;
         } else {
-          const safe = findAIMoveTarget(u, u.target.x, u.target.y);
+          let safe = findAIMoveTarget(u, u.target.x, u.target.y);
+          safe = applyAICircleSafety(u, safe, diff);
           u.target.x = safe.x;
           u.target.y = safe.y;
         }
@@ -3787,7 +3946,7 @@ for (let i = 0; i < all.length; i++){
 
           clearPlayerGate();
           if (usesPrivacyGate()){
-            beginPlayerGate(1, "PASS DEVICE TO PLAYER 1");
+	            beginPlayerGate(1, "PLAYER 1 START");
           }
         }
       }
@@ -4543,7 +4702,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
           if (!allPlansReadyFor(game.team1)) return;
           game.p1Ready = true;
           swapToPlayer2Plan();
-          beginPlayerGate(2, "PASS DEVICE TO PLAYER 2");
+          beginPlayerGate(2, "PLAYER 2 START");
         } else {
           if (!allPlansReadyFor(game.team2)) return;
           beginRevealThenExecute();
@@ -4598,15 +4757,14 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     if (!usesPrivacyGate()) return;
     if (game.gate === 0) return;
 
-    const title = game.gateMsg || `PASS DEVICE TO PLAYER ${game.gateTeam}`;
-    const detail = `PLAYER ${game.gateTeam} - TAP TO START PLANNING`;
+    const title = game.gateMsg || `PLAYER ${game.gateTeam} START`;
 
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,0.86)";
     ctx.fillRect(0, 0, W, H);
 
     const pw = Math.min(640, Math.floor(W * 0.84));
-    const ph = 220;
+    const ph = 160;
     const px = Math.floor(W/2 - pw/2);
     const py = Math.floor(H/2 - ph/2);
     drawPanel(px, py, pw, ph);
@@ -4619,13 +4777,6 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     ctx.shadowBlur = 16;
     ctx.fillText(title, W/2, py + 72);
 
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = "rgba(217,255,239,0.8)";
-    ctx.font = "15px ui-monospace, Menlo, Consolas, monospace";
-    ctx.fillText(detail, W/2, py + 118);
-    ctx.fillStyle = "rgba(217,255,239,0.60)";
-    ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
-    ctx.fillText("YOUR OPPONENT'S PLANS STAY HIDDEN UNTIL START", W/2, py + 154);
     ctx.restore();
   }
   function drawOnboardingOverlay(){
@@ -4668,7 +4819,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     ctx.font = "700 16px ui-monospace, Menlo, Consolas, monospace";
     ctx.shadowColor = "rgba(0,228,102,0.70)";
     ctx.shadowBlur = 10;
-    ctx.fillText("CLICK ANYWHERE TO CONTINUE", W/2, py + ph - 34);
+    ctx.fillText("CLICK OR TAP TO CONTINUE", W/2, py + ph - 34);
     ctx.restore();
   }
 
@@ -4725,6 +4876,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       if (state === State.SETUP) buildSetupUI();
       if (state === State.SETTINGS) buildSettingsUI();
       if (state === State.CREDITS) buildCreditsUI();
+      if (state === State.HELP) buildHelpUI();
       if (state === State.GAME) { paused = false; ui.buttons = []; armOnboardingIfNeeded(); }
       if (state === State.WIN) buildWinUI();
     }
@@ -4789,7 +4941,6 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     drawNeonGrid(t);
     const titleY = Math.floor(H * 0.20);
     drawTitle(titleY, "NEON KNOCKOUT");
-    drawMenuVersion(titleY + 62);
 
     const mx = input.x, my = input.y;
     for (const b of getActiveButtons()) drawButton(b, mx, my);
@@ -4953,8 +5104,8 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
 
     r1 = drawToggleRow(rowX, viewY + 24 - settingsScrollY, "SOUND", settings.sound, viewW);
     r2 = drawToggleRow(rowX, viewY + 66 - settingsScrollY, "MUSIC", settings.music, viewW);
-    rowY = drawColorSection("PLAYER COLOR", 1, rowY);
-    rowY = drawColorSection("ENEMY COLOR", 2, rowY);
+    rowY = drawColorSection("PLAYER ONE", 1, rowY);
+    rowY = drawColorSection("PLAYER TWO", 2, rowY);
     ctx.restore();
 
     const contentBottom = rowY + settingsScrollY + 8;
@@ -4978,32 +5129,6 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       ctx.fillRect(barX, thumbY, 6, thumbH);
       ctx.restore();
     }
-    if (settingsScrollMax > 0 && settingsScrollY < settingsScrollMax - 1){
-      const arrowX = viewX + viewW * 0.5;
-      const arrowY = viewY + viewH - 14;
-      ctx.save();
-      ctx.globalAlpha = 0.78;
-      ctx.strokeStyle = "rgba(0,228,102,0.78)";
-      ctx.lineWidth = 2.3;
-      ctx.lineCap = "round";
-      ctx.shadowColor = "rgba(0,228,102,0.7)";
-      ctx.shadowBlur = 10;
-      ctx.beginPath();
-      ctx.moveTo(arrowX, arrowY - 20);
-      ctx.lineTo(arrowX, arrowY + 4);
-      ctx.moveTo(arrowX - 16, arrowY - 2);
-      ctx.lineTo(arrowX, arrowY + 12);
-      ctx.lineTo(arrowX + 16, arrowY - 2);
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "bottom";
-      ctx.font = "11px ui-monospace, Menlo, Consolas, monospace";
-      ctx.fillStyle = "rgba(0,228,102,0.7)";
-      ctx.fillText("SCROLL DOWN", arrowX, arrowY - 24);
-      ctx.restore();
-    }
-
     if (input.justUp){
       if (r1 && pointInRect(mx, my, r1)){
         setSoundEnabled(!settings.sound);
@@ -5035,62 +5160,52 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
 
   function drawCredits(t){
     drawNeonGrid(t);
-    drawTitle(Math.floor(H * 0.18), "CREDIT / HELP");
+    drawTitle(Math.floor(H * 0.18), "CREDITS");
 
     const { panelW, panelH, px, py, viewX, viewY, viewW, viewH } = getCreditsLayout();
+    drawPanel(px, py, panelW, panelH);
+    creditsScrollMax = 0;
+    creditsScrollY = 0;
+
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(217,255,239,0.94)";
+    ctx.font = "700 22px ui-monospace, Menlo, Consolas, monospace";
+    ctx.fillText("Created by Aaron", W/2, viewY + Math.floor(viewH * 0.38));
+    ctx.font = "700 18px ui-monospace, Menlo, Consolas, monospace";
+    ctx.fillStyle = "rgba(175,255,214,0.90)";
+    ctx.fillText("Music: Arcade Ride by Vens Adams", W/2, viewY + Math.floor(viewH * 0.62));
+    ctx.restore();
+
+    const mx = input.x, my = input.y;
+    for (const b of getActiveButtons()) drawButton(b, mx, my);
+
+    drawFooterHint("ESC TO GO BACK");
+  }
+  function drawHelp(t){
+    drawNeonGrid(t);
+
+    const { panelW, panelH, px, py, viewX, viewY, viewW, viewH } = getHelpLayout();
     drawPanel(px, py, panelW, panelH);
 
     const textFont = "13px ui-monospace, Menlo, Consolas, monospace";
     const titleFont = "700 14px ui-monospace, Menlo, Consolas, monospace";
     const sections = [
-      { title: "CREDITS", items: [
-        "Created by Aaron.",
-        "Music: \"Arcade Ride\" by Vens Adams."
-      ]},
-      { title: "CURRENT BUILD", items: [
-        "Turn-based arena action: set movement arrows, then resolve together.",
-        "Version number is shown under the main menu title and auto-increments."
-      ]},
-      { title: "MODES", items: [
-        "Knockout: eliminate the other team to win the round.",
-        "Football: carry the ball into the opponent end zone.",
-        "Keep Away: hold the ball for 3 consecutive turns to win the round.",
-        "In Keep Away, knockouts are active and a knocked-off carrier resets the ball to center."
-      ]},
-      { title: "CUSTOM GAME OPTIONS", items: [
-        "Players: one player (vs AI) or two player local pass-and-play.",
-        "Difficulty: Easy / Normal / Hard in one player.",
-        "Map: Classic / Bumpers / Walls / Circle in Knockout mode.",
-        "Football and Keep Away are locked to the main Classic map.",
-        "Modifiers: Best of 3 / 6 / 9, Speed 1X / 2X, and physics twist mode.",
-        "Ice Floor: movement keeps sliding after launch (moderate extra glide).",
-        "Heavy Mode: collisions transfer less knockback.",
-        "Bouncy Mode: collisions launch farther with stronger ricochets."
-      ]},
+      { title: "KNOCKOUT", items: [getOnboardingTutorial("KNOCKOUT").subtitle, ...getOnboardingTutorial("KNOCKOUT").tips] },
+      { title: "FOOTBALL", items: [getOnboardingTutorial("FOOTBALL").subtitle, ...getOnboardingTutorial("FOOTBALL").tips] },
+      { title: "KEEP AWAY", items: [getOnboardingTutorial("KEEP_AWAY").subtitle, ...getOnboardingTutorial("KEEP_AWAY").tips] },
       { title: "CONTROLS", items: [
-        "Select a unit, then select a destination to place its arrow.",
-        "Press START to resolve the turn.",
-        "In two player, Player 1 sets plans, pass device, then Player 2 sets plans.",
-        "Use ESC to go back in menus and to pause/resume in match."
-      ]},
-      { title: "SERIES WIN", items: [
-        "Best of 3: first to 2 round wins.",
-        "Best of 6: first to 3 round wins.",
-        "Best of 9: first to 5 round wins."
+        "Click a unit, then click a destination to set its arrow.",
+        "A longer arrow applies more power.",
+        "A shorter arrow applies less power.",
+        "Press START to resolve all planned moves."
       ]}
     ];
 
     ctx.save();
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
-
-    ctx.fillStyle = COL_TEXT;
-    ctx.font = titleFont;
-    ctx.fillText(`NEON KNOCKOUT HELP - v${GAME_VERSION}`, viewX, py + 22);
-    ctx.fillStyle = "rgba(0,228,102,0.58)";
-    ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
-    ctx.fillText("UPDATED FOR CURRENT MODES + RULES", viewX, py + 42);
-    ctx.fillText("SCROLL OR SWIPE FOR MORE", viewX, py + 58);
 
     const measureLines = (text, maxWidth) => {
       const words = String(text).split(/\s+/);
@@ -5123,15 +5238,15 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       }
       contentH += 8;
     }
-    creditsScrollMax = Math.max(0, contentH - viewH);
-    creditsScrollY = clamp(creditsScrollY, 0, creditsScrollMax);
+    helpScrollMax = Math.max(0, contentH - viewH);
+    helpScrollY = clamp(helpScrollY, 0, helpScrollMax);
 
     ctx.save();
     ctx.beginPath();
     ctx.rect(viewX, viewY, viewW, viewH);
     ctx.clip();
 
-    let y = viewY + 12 - creditsScrollY;
+    let y = viewY + 12 - helpScrollY;
     for (const sec of sections){
       ctx.fillStyle = COL_TEXT;
       ctx.font = titleFont;
@@ -5143,7 +5258,6 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       ctx.moveTo(viewX + 6, y + 16);
       ctx.lineTo(viewX + viewW - 20, y + 16);
       ctx.stroke();
-
       y += 22;
 
       ctx.fillStyle = "rgba(217,255,239,0.82)";
@@ -5160,14 +5274,13 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     }
     ctx.restore();
 
-    if (creditsScrollMax > 0){
+    if (helpScrollMax > 0){
       const barX = viewX + viewW + 6;
       const barY = viewY - 2;
       const barH = viewH + 4;
-      const thumbH = Math.max(30, barH * (barH / (barH + creditsScrollMax)));
-      const tt = creditsScrollY / creditsScrollMax;
+      const thumbH = Math.max(30, barH * (barH / (barH + helpScrollMax)));
+      const tt = helpScrollY / helpScrollMax;
       const thumbY = barY + (barH - thumbH) * tt;
-
       ctx.globalAlpha = 0.55;
       ctx.fillStyle = "rgba(0,228,102,0.12)";
       ctx.fillRect(barX, barY, 6, barH);
@@ -5179,8 +5292,6 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
 
     const mx = input.x, my = input.y;
     for (const b of getActiveButtons()) drawButton(b, mx, my);
-
-    drawFooterHint("ESC TO GO BACK");
   }
 
   function drawPause(t){
@@ -5273,6 +5384,7 @@ const mx = input.x, my = input.y;
     if (state === State.SETUP && ui.buttons.length === 0 && !transition.active) buildSetupUI();
     if (state === State.SETTINGS && ui.buttons.length === 0 && !transition.active) buildSettingsUI();
     if (state === State.CREDITS && ui.buttons.length === 0 && !transition.active) buildCreditsUI();
+    if (state === State.HELP && ui.buttons.length === 0 && !transition.active) buildHelpUI();
 
     if (state === State.GAME){
       if (!paused){
@@ -5285,6 +5397,7 @@ const mx = input.x, my = input.y;
     else if (state === State.SETUP) drawSetup(t);
     else if (state === State.SETTINGS) drawSettings(t);
     else if (state === State.CREDITS) drawCredits(t);
+    else if (state === State.HELP) drawHelp(t);
     else if (state === State.GAME) { drawNeonGrid(t); drawGameplay(t); }
     else if (state === State.PAUSE) drawPause(t);
     else if (state === State.WIN) drawWin(t);
@@ -5327,6 +5440,7 @@ const mx = input.x, my = input.y;
       if (state === State.MENU){ buildMenuUI(); return; }
       if (state === State.SETTINGS){ buildSettingsUI(); return; }
       if (state === State.CREDITS){ buildCreditsUI(); return; }
+      if (state === State.HELP){ buildHelpUI(); return; }
       if (state === State.WIN){ buildWinUI(); }
     }, 120);
   }, { passive: true });
@@ -5347,6 +5461,9 @@ const mx = input.x, my = input.y;
       e.preventDefault();
     } else if (state === State.CREDITS){
       creditsScrollY = clamp(creditsScrollY + e.deltaY * 0.9, 0, creditsScrollMax);
+      e.preventDefault();
+    } else if (state === State.HELP){
+      helpScrollY = clamp(helpScrollY + e.deltaY * 0.9, 0, helpScrollMax);
       e.preventDefault();
     }
   }, { passive:false });
