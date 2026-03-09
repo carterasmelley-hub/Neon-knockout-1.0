@@ -360,6 +360,22 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   }
   // Resize
   let W = 0, H = 0;
+  function hasCoarsePointer(){
+    try{
+      return !!(navigator.maxTouchPoints > 0 || window.matchMedia?.("(pointer: coarse)")?.matches);
+    } catch (_){
+      return navigator.maxTouchPoints > 0;
+    }
+  }
+  function isPhoneViewport(){
+    return hasCoarsePointer() && (Math.min(W, H) <= 560 || (W <= 980 && H <= 560));
+  }
+  function isMobileCompactLayout(){
+    return isPhoneViewport();
+  }
+  function needsLandscapeRotateOverlay(){
+    return isPhoneViewport() && H > W;
+  }
   function resize(){
     W = Math.floor(window.innerWidth);
     H = Math.floor(window.innerHeight);
@@ -903,6 +919,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const p = canvasToWorld(e);
     input.x = p.x;
     input.y = p.y;
+    if (needsLandscapeRotateOverlay()) return;
 
     if (setupTouchScroll.active && state === State.SETUP && input.down && e.pointerId === setupTouchScroll.pointerId){
       const dy = input.y - setupTouchScroll.lastY;
@@ -975,6 +992,13 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const p = canvasToWorld(e);
     input.x = p.x;
     input.y = p.y;
+    if (needsLandscapeRotateOverlay()){
+      input.down = false;
+      input.justDown = false;
+      input.pointerId = null;
+      ui.pressed = null;
+      return;
+    }
     input.down = true;
     input.justDown = true;
     input.pointerId = e.pointerId;
@@ -1040,6 +1064,18 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const p = canvasToWorld(e);
     input.x = p.x;
     input.y = p.y;
+    if (needsLandscapeRotateOverlay()){
+      input.down = false;
+      input.justUp = false;
+      input.pointerId = null;
+      ui.pressed = null;
+      clearSetupTouchScroll();
+      clearSettingsTouchScroll();
+      clearCreditsTouchScroll();
+      clearHelpTouchScroll();
+      settingsSliderDrag.key = null;
+      return;
+    }
     input.down = false;
     input.justUp = true;
     input.pointerId = null;
@@ -1587,8 +1623,9 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const minDim = Math.min(W, H);
     const scaleByMin = minDim / 820;
     const scaleByW = (W - 72) / 820;
-    const scaleByH = (H - 230) / 520; // leave room for HUD + buttons
-    return clamp(Math.min(scaleByMin, scaleByW, scaleByH), 0.58, 1.2);
+    const hudReserve = isMobileCompactLayout() ? 170 : 230;
+    const scaleByH = (H - hudReserve) / 520; // leave room for HUD + buttons
+    return clamp(Math.min(scaleByMin, scaleByW, scaleByH), isMobileCompactLayout() ? 0.52 : 0.58, 1.2);
   }
   function getArenaLayout(scale=computeArenaScale()){
     const footballMode = isFootballMode();
@@ -4516,6 +4553,20 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   }
 
   function getSetupLayout(){
+    if (isMobileCompactLayout()){
+      const panelW = Math.min(740, Math.floor(W * 0.94));
+      const panelH = Math.max(250, H - 108);
+      const px = Math.floor(W/2 - panelW/2);
+      const py = Math.max(78, Math.floor(H * 0.16));
+      const pad = 16;
+      const headerH = 30;
+      const footerH = 82;
+      const viewX = px + pad;
+      const viewY = py + headerH;
+      const viewW = panelW - pad*2 - 8;
+      const viewH = panelH - headerH - footerH;
+      return { panelW, panelH, px, py, pad, viewX, viewY, viewW, viewH };
+    }
     const panelW = Math.min(760, Math.floor(W * 0.90));
     const panelH = clamp(Math.floor(H * 0.72), 720, Math.max(720, H - 110));
     const px = Math.floor(W/2 - panelW/2);
@@ -4530,6 +4581,20 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     return { panelW, panelH, px, py, pad, viewX, viewY, viewW, viewH };
   }
   function getSettingsLayout(){
+    if (isMobileCompactLayout()){
+      const panelW = Math.min(740, Math.floor(W * 0.94));
+      const panelH = Math.max(250, H - 108);
+      const px = Math.floor(W/2 - panelW/2);
+      const py = Math.max(78, Math.floor(H * 0.16));
+      const pad = 18;
+      const headerH = 30;
+      const footerH = 18;
+      const viewX = px + pad;
+      const viewY = py + headerH;
+      const viewW = panelW - pad*2 - 8;
+      const viewH = panelH - headerH - footerH;
+      return { panelW, panelH, px, py, pad, viewX, viewY, viewW, viewH };
+    }
     const panelW = Math.min(760, Math.floor(W * 0.90));
     const panelH = clamp(Math.floor(H * 0.62), 390, 520);
     const px = Math.floor(W/2 - panelW/2);
@@ -4578,23 +4643,24 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     if (!mapUnlocks.bridges && config.stage === "BRIDGES") config.stage = "CLASSIC";
     if (!mapUnlocks.doors && config.stage === "DOORS") config.stage = "CLASSIC";
     const { panelW, panelH, px, py, pad, viewX, viewY, viewW, viewH } = getSetupLayout();
+    const compact = isMobileCompactLayout();
 
     let y = viewY - setupScrollY;
     function section(label){
       setupSectionHeaders.push({ label, y });
-      y += 18;
+      y += compact ? 14 : 18;
     }
 
     function row(btns, cols=btns.length){
-      const gap = 12;
+      const gap = compact ? 8 : 12;
       const bw = (viewW - gap*(cols-1)) / cols;
-      const bh = 46;
+      const bh = compact ? 38 : 46;
       let x = viewX;
       for (const b of btns){
         addButton(b.id, x, y, bw, bh, b.label, b.onClick, b.enabled!==false, b.selected===true);
         x += bw + gap;
       }
-      y += bh + 14;
+      y += bh + (compact ? 8 : 14);
     }
 
     // PLAYERS
@@ -4602,7 +4668,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       { id:"players_1p", label:"ONE PLAYER", onClick:()=>{ config.players=1; buildSetupUI(); beep(600,0.03,"square",0.03); }, enabled:true, selected:(config.players===1) },
       { id:"players_2p", label:"TWO PLAYER", onClick:()=>{ config.players=2; buildSetupUI(); beep(600,0.03,"square",0.03); }, enabled:true, selected:(config.players===2) }
     ], 2);
-    y += 16;
+    y += compact ? 8 : 16;
 
     // GAME TYPE
     section("MODE");
@@ -4611,7 +4677,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       { id:"mode_football", label:"FOOTBALL", onClick:()=>{ config.mode="FOOTBALL"; config.stage="CLASSIC"; buildSetupUI(); beep(620,0.04,"square",0.035); }, enabled:true, selected:(isFootballMode()) },
       { id:"mode_keepaway", label:"KEEP AWAY", onClick:()=>{ config.mode="KEEP_AWAY"; config.stage="CLASSIC"; buildSetupUI(); beep(600,0.04,"triangle",0.035); }, enabled:true, selected:(isKeepAwayMode()) }
     ], 3);
-    y += 4;
+    y += compact ? 1 : 4;
 
     // DIFFICULTY (single-player only)
     section("DIFFICULTY");
@@ -4620,7 +4686,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       { id:"diff_norm", label:"NORMAL", onClick:()=>{ config.difficulty="NORMAL"; buildSetupUI(); beep(520,0.03,"triangle",0.03); }, enabled:isSinglePlayerMode(), selected:(isSinglePlayerMode() && config.difficulty==="NORMAL") },
       { id:"diff_hard", label:"HARD", onClick:()=>{ config.difficulty="HARD"; buildSetupUI(); beep(520,0.03,"triangle",0.03); }, enabled:isSinglePlayerMode(), selected:(isSinglePlayerMode() && config.difficulty==="HARD") }
     ]);
-    y += 4;
+    y += compact ? 1 : 4;
 
     // STAGE
     const stageEnabled = isKnockoutMode();
@@ -4636,7 +4702,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       { id:"stage_doors", label:"DOORS", onClick:()=>{ if (!mapUnlocks.doors) return; config.stage="DOORS"; buildSetupUI(); beep(470,0.03,"square",0.03); }, enabled:(stageEnabled && mapUnlocks.doors), selected:(stageEnabled && config.stage==="DOORS") }
     ], 3);
 
-    y += 4;
+    y += compact ? 1 : 4;
     section("MODIFIERS");
 
     // SERIES
@@ -4660,19 +4726,19 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       { id:"mod_bouncy", label:"BOUNCY MODE", onClick:()=>{ config.modifier="BOUNCY"; buildSetupUI(); beep(560,0.03,"triangle",0.03); }, enabled:true, selected:(config.modifier==="BOUNCY") }
     ], 2);
 
-    y += 28;
+    y += compact ? 14 : 28;
     const contentBottom = y + setupScrollY + 56;
     setupScrollMax = Math.max(0, contentBottom - (viewY + viewH));
     setupScrollY = clamp(setupScrollY, 0, setupScrollMax);
 
     // BACK / BEGIN (responsive width, no overlap on narrow viewports)
-    const footerGap = 14;
+    const footerGap = compact ? 10 : 14;
     const footerW = Math.min(viewW, 720);
     const footerX = Math.floor(viewX + (viewW - footerW) * 0.5);
     const bw2 = Math.floor((footerW - footerGap) / 2);
-    const bh2 = 58;
+    const bh2 = compact ? 46 : 58;
     const bx1 = footerX;
-    const by = py + panelH - bh2 - 22;
+    const by = py + panelH - bh2 - (compact ? 16 : 22);
     addButton("setup_back", bx1, by, bw2, bh2, "BACK", () => { state = State.MENU; buildMenuUI(); beep(300,0.04,"square",0.03); });
     addButton("setup_begin", bx1 + bw2 + footerGap, by, bw2, bh2, "BEGIN", () => { startNewGame({ players: config.players, mode: config.mode, difficulty: config.difficulty, stage: config.stage, series: config.series, speed: config.speed, modifier: config.modifier }); beep(740,0.05,"triangle",0.04); });
   }
@@ -5869,10 +5935,11 @@ for (let i = 0; i < all.length; i++){
     const sideLabel = isTwoPlayerMode() ? "P2" : "AI";
     const p1Pal = getTeamPalette(1);
     const p2Pal = getTeamPalette(2);
-    const bw = Math.floor(clamp(p.w * 0.62, 340, 620));
-    const bh = 48;
+    const compact = isMobileCompactLayout();
+    const bw = Math.floor(clamp(p.w * (compact ? 0.70 : 0.62), compact ? 280 : 340, compact ? 520 : 620));
+    const bh = compact ? 42 : 48;
     const bx = Math.floor(W/2 - bw/2);
-    const by = Math.floor(Math.max(66, p.y - bh - 20));
+    const by = Math.floor(Math.max(compact ? 48 : 66, p.y - bh - (compact ? 12 : 20)));
     const lx = Math.floor(bx + bw * 0.22);
     const rx = Math.floor(bx + bw * 0.78);
     const cx = Math.floor(bx + bw * 0.50);
@@ -5890,7 +5957,7 @@ for (let i = 0; i < all.length; i++){
 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = "10px ui-monospace, Menlo, Consolas, monospace";
+    ctx.font = `${compact ? 9 : 10}px ui-monospace, Menlo, Consolas, monospace`;
     ctx.fillStyle = p1Pal.marker;
     ctx.fillText("P1", lx, by + 10);
     ctx.fillStyle = p2Pal.marker;
@@ -5902,18 +5969,18 @@ for (let i = 0; i < all.length; i++){
     const roundText = `ROUND ${clamp(game.match, 1, meta.bestOf)}/${meta.bestOf}`;
 
     ctx.fillStyle = "rgba(246,255,250,0.96)";
-    ctx.font = "800 23px ui-monospace, Menlo, Consolas, monospace";
+    ctx.font = `${compact ? 19 : 23}px ui-monospace, Menlo, Consolas, monospace`;
     ctx.fillText(String(leftScore), lx, by + 29);
     ctx.fillText(String(rightScore), rx, by + 29);
 
     ctx.fillStyle = "rgba(0,228,102,0.88)";
-    ctx.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    ctx.font = `${compact ? 10 : 11}px ui-monospace, Menlo, Consolas, monospace`;
     if (isKeepAwayMode()){
       const ka = game.keepAway;
       const holderLabel = ka.streakTeam === 1 ? "P1" : (ka.streakTeam === 2 ? sideLabel : "NONE");
       ctx.fillText(`KEEP AWAY ${ka.streakCount}/${ka.targetStreak}`, cx, by + 11);
       ctx.fillStyle = "rgba(217,255,239,0.78)";
-      ctx.font = "10px ui-monospace, Menlo, Consolas, monospace";
+      ctx.font = `${compact ? 9 : 10}px ui-monospace, Menlo, Consolas, monospace`;
       ctx.fillText(`HOLDER ${holderLabel}  ${clamp(game.match, 1, meta.bestOf)}/${meta.bestOf}`, cx, by + 30);
     } else {
       ctx.fillText(roundText, cx, by + 11);
@@ -6241,13 +6308,14 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
   function buildGameUI(){
     ui.buttons = [];
 
-    const gap = 12;
-    const totalW = Math.min(Math.floor(W * 0.88), Math.floor(game.platform.w * 0.92));
-    const pauseW = clamp(Math.floor(totalW * 0.22), 110, 170);
+    const compact = isMobileCompactLayout();
+    const gap = compact ? 8 : 12;
+    const totalW = Math.min(Math.floor(W * (compact ? 0.94 : 0.88)), Math.floor(game.platform.w * (compact ? 0.96 : 0.92)));
+    const pauseW = clamp(Math.floor(totalW * (compact ? 0.20 : 0.22)), compact ? 82 : 110, compact ? 124 : 170);
     const bw = Math.floor((totalW - pauseW - gap*2) / 2);
-    const bh = 44;
+    const bh = compact ? 36 : 44;
     const x = Math.floor(W/2 - totalW/2);
-    const y = Math.floor(game.platform.y + game.platform.h + 22);
+    const y = Math.floor(game.platform.y + game.platform.h + (compact ? 12 : 22));
 
     addButton("primary", x, y, bw, bh, "START", () => {
       if (isSinglePlayerMode()){
@@ -6380,6 +6448,34 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     ctx.fillText("CLICK OR TAP TO CONTINUE", W/2, py + ph - 34);
     ctx.restore();
   }
+  function drawRotateDeviceOverlay(){
+    if (!needsLandscapeRotateOverlay()) return;
+
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.90)";
+    ctx.fillRect(0, 0, W, H);
+
+    const pw = Math.min(460, Math.floor(W * 0.86));
+    const ph = Math.min(250, Math.floor(H * 0.74));
+    const px = Math.floor(W/2 - pw/2);
+    const py = Math.floor(H/2 - ph/2);
+    drawPanel(px, py, pw, ph);
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = COL_NEON;
+    ctx.shadowColor = "rgba(0,228,102,0.78)";
+    ctx.shadowBlur = 16;
+    ctx.font = "800 26px ui-monospace, Menlo, Consolas, monospace";
+    ctx.fillText("ROTATE DEVICE", W/2, py + 66);
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(217,255,239,0.88)";
+    ctx.font = "700 14px ui-monospace, Menlo, Consolas, monospace";
+    ctx.fillText("LANDSCAPE WORKS BEST FOR NEON KNOCKOUT", W/2, py + 108);
+    ctx.fillText("TURN YOUR PHONE SIDEWAYS TO PLAY", W/2, py + 138);
+    ctx.restore();
+  }
 
   function drawGameplay(t){
     ctx.save();
@@ -6509,7 +6605,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
   function drawSetup(t){
     drawNeonGrid(t);
     const { panelW, panelH, px, py, viewX, viewY, viewW, viewH } = getSetupLayout();
-    drawTitle(Math.max(92, py - 72), "CUSTOM GAME");
+    drawTitle(isMobileCompactLayout() ? Math.max(54, py - 26) : Math.max(92, py - 72), "CUSTOM GAME");
 
     drawPanel(px, py, panelW, panelH);
 
@@ -6577,12 +6673,14 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       }
     }
 
-    ctx.save();
-    ctx.fillStyle = "rgba(0,228,102,0.45)";
-    ctx.font = `12px ${FONT}`;
-    ctx.textAlign = "center";
-    ctx.fillText("ESC / BACK TO RETURN", W/2, py + panelH + 24);
-    ctx.restore();
+    if (!isMobileCompactLayout()){
+      ctx.save();
+      ctx.fillStyle = "rgba(0,228,102,0.45)";
+      ctx.font = `12px ${FONT}`;
+      ctx.textAlign = "center";
+      ctx.fillText("ESC / BACK TO RETURN", W/2, py + panelH + 24);
+      ctx.restore();
+    }
   }
 
   function drawSettings(t){
@@ -6977,7 +7075,7 @@ const mx = input.x, my = input.y;
     if (state === State.HELP && ui.buttons.length === 0 && !transition.active) buildHelpUI();
 
     if (state === State.GAME){
-      if (!paused){
+      if (!paused && !needsLandscapeRotateOverlay()){
         updateGameplay(dt);
       }
     }
@@ -6995,6 +7093,7 @@ const mx = input.x, my = input.y;
 
     drawTransitionOverlay();
     drawUnlockToast();
+    drawRotateDeviceOverlay();
     drawBloomPass();
     input.justDown = false;
     input.justUp = false;
