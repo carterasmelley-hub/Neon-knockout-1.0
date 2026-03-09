@@ -223,6 +223,8 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   const VERSION_KEY = "nk_version_counter";
   const VERSION_SIGNATURE_KEY = "nk_version_signature";
   const SETTINGS_PREFS_KEY = "nk_settings_prefs_v1";
+  const MAP_UNLOCKS_KEY = "nk_map_unlocks_v1";
+  const MAP_PROGRESS_KEY = "nk_map_progress_v1";
   const GAME_VERSION = (() => {
     let version = 1;
     try{
@@ -284,21 +286,75 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   function loadSettingsPrefs(){
     try{
       const raw = localStorage.getItem(SETTINGS_PREFS_KEY);
-      if (!raw) return { sound: true, music: true };
+      if (!raw) return { sound: true, music: true, soundVolume: 0.82, musicVolume: 0.72, devMode: false };
       const parsed = JSON.parse(raw);
+      const parsedSoundVolume = typeof parsed?.soundVolume === "number" ? clamp(parsed.soundVolume, 0, 1) : (parsed?.sound === false ? 0 : 0.82);
+      const parsedMusicVolume = typeof parsed?.musicVolume === "number" ? clamp(parsed.musicVolume, 0, 1) : (parsed?.music === false ? 0 : 0.72);
       return {
-        sound: parsed?.sound !== false,
-        music: parsed?.music !== false
+        sound: parsedSoundVolume > 0.001,
+        music: parsedMusicVolume > 0.001,
+        soundVolume: parsedSoundVolume,
+        musicVolume: parsedMusicVolume,
+        devMode: parsed?.devMode === true
       };
     } catch (_){
-      return { sound: true, music: true };
+      return { sound: true, music: true, soundVolume: 0.82, musicVolume: 0.72, devMode: false };
     }
   }
-  function saveSettingsPrefs(sound, music){
+  function saveSettingsPrefs(soundVolume, musicVolume, devMode){
+    const sfx = clamp(soundVolume ?? 0.82, 0, 1);
+    const music = clamp(musicVolume ?? 0.72, 0, 1);
     try{
       localStorage.setItem(SETTINGS_PREFS_KEY, JSON.stringify({
-        sound: !!sound,
-        music: !!music
+        sound: sfx > 0.001,
+        music: music > 0.001,
+        soundVolume: sfx,
+        musicVolume: music,
+        devMode: devMode === true
+      }));
+    } catch (_) {}
+  }
+  function loadMapUnlocks(){
+    try{
+      const raw = localStorage.getItem(MAP_UNLOCKS_KEY);
+      if (!raw) return { bridges: false, doors: false };
+      const parsed = JSON.parse(raw);
+      return {
+        bridges: parsed?.bridges === true,
+        doors: parsed?.doors === true
+      };
+    } catch (_){
+      return { bridges: false, doors: false };
+    }
+  }
+  function saveMapUnlocks(){
+    try{
+      localStorage.setItem(MAP_UNLOCKS_KEY, JSON.stringify({
+        bridges: mapUnlocks.bridges === true,
+        doors: mapUnlocks.doors === true
+      }));
+    } catch (_) {}
+  }
+  function loadMapProgress(){
+    try{
+      const raw = localStorage.getItem(MAP_PROGRESS_KEY);
+      if (!raw) return { multiplayerRounds: 0, hardRounds: 0, normalRounds: 0 };
+      const parsed = JSON.parse(raw);
+      return {
+        multiplayerRounds: Math.max(0, parsed?.multiplayerRounds | 0),
+        hardRounds: Math.max(0, parsed?.hardRounds | 0),
+        normalRounds: Math.max(0, parsed?.normalRounds | 0)
+      };
+    } catch (_){
+      return { multiplayerRounds: 0, hardRounds: 0, normalRounds: 0 };
+    }
+  }
+  function saveMapProgress(){
+    try{
+      localStorage.setItem(MAP_PROGRESS_KEY, JSON.stringify({
+        multiplayerRounds: mapProgress.multiplayerRounds | 0,
+        hardRounds: mapProgress.hardRounds | 0,
+        normalRounds: mapProgress.normalRounds | 0
       }));
     } catch (_) {}
   }
@@ -326,8 +382,28 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   const settings = {
     sound: loadedSettings.sound,
     music: loadedSettings.music,
+    soundVolume: loadedSettings.soundVolume,
+    musicVolume: loadedSettings.musicVolume,
+    devMode: loadedSettings.devMode === true,
     playerColor: loadedTeamColors.player,
     enemyColor: loadedTeamColors.enemy
+  };
+  const loadedMapUnlocks = loadMapUnlocks();
+  const mapUnlocks = {
+    bridges: loadedMapUnlocks.bridges,
+    doors: loadedMapUnlocks.doors
+  };
+  const loadedMapProgress = loadMapProgress();
+  const mapProgress = {
+    multiplayerRounds: loadedMapProgress.multiplayerRounds,
+    hardRounds: loadedMapProgress.hardRounds,
+    normalRounds: loadedMapProgress.normalRounds
+  };
+  const unlockToast = {
+    active: false,
+    timer: 0,
+    title: "",
+    subtitle: ""
   };
   const ONBOARDING_TUTORIALS = Object.freeze({
     KNOCKOUT: Object.freeze({
@@ -381,15 +457,21 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     onboarding.active = false;
     onboarding.shownModes.add(onboarding.mode || onboardingModeKey());
   }
-  function setSoundEnabled(enabled){
-    settings.sound = !!enabled;
-    saveSettingsPrefs(settings.sound, settings.music);
+  function setSoundVolume(value){
+    settings.soundVolume = clamp(value, 0, 1);
+    settings.sound = settings.soundVolume > 0.001;
+    saveSettingsPrefs(settings.soundVolume, settings.musicVolume, settings.devMode);
     if (settings.sound) ensureAudio();
   }
-  function setMusicEnabled(enabled, userGesture=false){
-    settings.music = !!enabled;
-    saveSettingsPrefs(settings.sound, settings.music);
+  function setMusicVolume(value, userGesture=false){
+    settings.musicVolume = clamp(value, 0, 1);
+    settings.music = settings.musicVolume > 0.001;
+    saveSettingsPrefs(settings.soundVolume, settings.musicVolume, settings.devMode);
     applyMusicState(userGesture);
+  }
+  function setDevModeEnabled(enabled){
+    settings.devMode = !!enabled;
+    saveSettingsPrefs(settings.soundVolume, settings.musicVolume, settings.devMode);
   }
   function getTeamPalette(team){
     const key = (team === 1) ? settings.playerColor : settings.enemyColor;
@@ -415,7 +497,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     players: 1,          // 1 | 2
     mode: "KNOCKOUT",    // "KNOCKOUT" | "FOOTBALL" | "KEEP_AWAY"
     difficulty: "NORMAL", // "EASY" | "NORMAL" | "HARD" (single-player only)
-    stage: "CLASSIC",   // "CLASSIC" | "BUMPER3" | "WALLS" | "CIRCLE"
+    stage: "CLASSIC",   // "CLASSIC" | "BUMPER3" | "WALLS" | "CIRCLE" | "BRIDGES" | "DOORS"
     series: "BO3",      // "BO3" | "BO6" | "BO9"
     speed: "1X",        // "1X" | "2X"
     modifier: "STANDARD" // "STANDARD" | "ICE" | "HEAVY" | "BOUNCY"
@@ -425,6 +507,8 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   function isKnockoutMode(){ return config.mode === "KNOCKOUT"; }
   function isFootballMode(){ return config.mode === "FOOTBALL"; }
   function isKeepAwayMode(){ return config.mode === "KEEP_AWAY"; }
+  function isBridgesStage(){ return config.stage === "BRIDGES"; }
+  function isDoorsStage(){ return config.stage === "DOORS"; }
   function isCurlingMode(){ return false; } // Legacy mode removed.
   function isHockeyMode(){ return config.mode === "HOCKEY"; }
   function usesCarryBallMode(){ return isFootballMode() || isKeepAwayMode(); }
@@ -452,7 +536,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   const DIFF = {
     EASY:   { aimJitter: 120, distMin: 0.20, distMax: 0.54, steer: 0.08, intercept: 0.00, leadJitter: 0.44, circleSafety: 0.08, edgeSafety: 0.06, directBias: 0.78, fastShotBias: 0.26, pressure: 1.00 },
     NORMAL: { aimJitter: 66,  distMin: 0.34, distMax: 0.76, steer: 0.15, intercept: 0.24, leadJitter: 0.28, circleSafety: 0.45, edgeSafety: 0.30, directBias: 0.68, fastShotBias: 0.40, pressure: 1.08 },
-    HARD:   { aimJitter: 12,  distMin: 0.70, distMax: 1.00, steer: 0.22, intercept: 0.89, leadJitter: 0.06, circleSafety: 0.76, edgeSafety: 0.62, directBias: 0.50, fastShotBias: 0.70, pressure: 1.33 }
+    HARD:   { aimJitter: 8,   distMin: 0.76, distMax: 1.00, steer: 0.24, intercept: 0.96, leadJitter: 0.03, circleSafety: 0.82, edgeSafety: 0.70, directBias: 0.56, fastShotBias: 0.78, pressure: 1.48 }
   };
 
   // ============================================================
@@ -461,8 +545,9 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   const MUSIC_TRACK_SRC = "arcade-ride-vens-adams-main-version-27955-01-45.mp3";
   let audioCtx = null;
   let bgMusicEl = null;
+  const sfxCooldowns = Object.create(null);
   function ensureAudio(){
-    if (!settings.sound) return null;
+    if (!settings.sound || settings.soundVolume <= 0.001) return null;
     if (!audioCtx){
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
@@ -476,7 +561,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     try{
       const a = new Audio(MUSIC_TRACK_SRC);
       a.loop = true;
-      a.volume = 0.34;
+      a.volume = 0.34 * clamp(settings.musicVolume, 0, 1);
       a.preload = "auto";
       bgMusicEl = a;
     } catch (_){
@@ -487,15 +572,22 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   function applyMusicState(userGesture=false){
     const m = ensureMusicEl();
     if (!m) return;
-    if (!settings.music || document.hidden){
+    m.volume = 0.34 * clamp(settings.musicVolume, 0, 1);
+    if (!settings.music || settings.musicVolume <= 0.001 || document.hidden){
       m.pause();
       return;
     }
     const p = m.play();
     if (p && typeof p.catch === "function") p.catch(()=>{});
   }
+  function canPlaySfx(key, minGap=0.04){
+    const now = performance.now() * 0.001;
+    if ((sfxCooldowns[key] || 0) > now) return false;
+    sfxCooldowns[key] = now + minGap;
+    return true;
+  }
   function beep(freq=440, dur=0.06, type="sine", gain=0.05){
-    if (!settings.sound) return;
+    if (!settings.sound || settings.soundVolume <= 0.001) return;
     const ac = ensureAudio();
     if (!ac) return;
     const t0 = ac.currentTime;
@@ -504,17 +596,104 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     o.type = type;
     o.frequency.setValueAtTime(freq, t0);
     g.gain.setValueAtTime(0, t0);
-    g.gain.linearRampToValueAtTime(gain, t0 + 0.005);
+    g.gain.linearRampToValueAtTime(gain * settings.soundVolume, t0 + 0.005);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     o.connect(g);
     g.connect(ac.destination);
     o.start(t0);
     o.stop(t0 + dur + 0.02);
   }
+  function tone(freq=440, dur=0.06, type="sine", gain=0.05, when=0, endFreq=null){
+    if (!settings.sound || settings.soundVolume <= 0.001) return;
+    const ac = ensureAudio();
+    if (!ac) return;
+    const t0 = ac.currentTime + Math.max(0, when);
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t0);
+    if (endFreq != null) o.frequency.exponentialRampToValueAtTime(Math.max(24, endFreq), t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0001, gain * settings.soundVolume), t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g);
+    g.connect(ac.destination);
+    o.start(t0);
+    o.stop(t0 + dur + 0.03);
+  }
+  function noiseBurst(dur=0.08, gain=0.03, when=0, hp=260, lp=2600){
+    if (!settings.sound || settings.soundVolume <= 0.001) return;
+    const ac = ensureAudio();
+    if (!ac) return;
+    const t0 = ac.currentTime + Math.max(0, when);
+    const frames = Math.max(1, Math.floor(ac.sampleRate * dur));
+    const buffer = ac.createBuffer(1, frames, ac.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / frames);
+    const src = ac.createBufferSource();
+    src.buffer = buffer;
+    const hpNode = ac.createBiquadFilter();
+    hpNode.type = "highpass";
+    hpNode.frequency.setValueAtTime(hp, t0);
+    const lpNode = ac.createBiquadFilter();
+    lpNode.type = "lowpass";
+    lpNode.frequency.setValueAtTime(lp, t0);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0001, gain * settings.soundVolume), t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(hpNode);
+    hpNode.connect(lpNode);
+    lpNode.connect(g);
+    g.connect(ac.destination);
+    src.start(t0);
+    src.stop(t0 + dur + 0.02);
+  }
   function clickSound(){ beep(880, 0.04, "square", 0.03); }
   function impactSound(strength){
+    if (!canPlaySfx("impact", 0.045)) return;
     const f = clamp(220 + strength * 260, 200, 700);
     beep(f, 0.05, "sawtooth", clamp(0.02 + strength * 0.06, 0.02, 0.09));
+  }
+  function heavyKnockoutSmash(strength=1){
+    if (!canPlaySfx("smash", 0.12)) return;
+    const s = clamp(strength, 0, 1);
+    tone(180 + 60 * s, 0.11, "sawtooth", 0.06 + 0.03 * s, 0, 72 + 22 * s);
+    tone(420 + 120 * s, 0.075, "square", 0.018 + 0.012 * s, 0.012, 180 + 60 * s);
+    noiseBurst(0.07, 0.018 + 0.012 * s, 0.002, 420, 3800);
+  }
+  function fallOutSound(count=1){
+    if (!canPlaySfx("fallout", 0.06)) return;
+    const s = clamp((count - 1) * 0.18, 0, 0.35);
+    tone(260, 0.14, "triangle", 0.04 + s * 0.03, 0, 70);
+    noiseBurst(0.09, 0.015 + s * 0.01, 0.018, 1800, 7200);
+  }
+  function ballPickupSound(stolen=false){
+    if (!canPlaySfx(stolen ? "ball_steal" : "ball_pickup", 0.05)) return;
+    if (stolen){
+      tone(420, 0.045, "square", 0.03, 0, 620);
+      tone(640, 0.05, "triangle", 0.024, 0.03, 820);
+    } else {
+      tone(760, 0.045, "triangle", 0.028, 0, 980);
+      tone(980, 0.05, "sine", 0.02, 0.026, 1220);
+    }
+  }
+  function footballScoreSound(){
+    if (!canPlaySfx("football_score", 0.2)) return;
+    tone(360, 0.08, "square", 0.035, 0, 520);
+    tone(540, 0.09, "square", 0.04, 0.07, 760);
+    tone(810, 0.16, "triangle", 0.045, 0.15, 1120);
+  }
+  function doorToggleSound(){
+    if (!canPlaySfx("door_toggle", 0.08)) return;
+    tone(190, 0.06, "sawtooth", 0.028, 0, 130);
+    tone(260, 0.09, "square", 0.016, 0.025, 210);
+  }
+  function bumperHitSound(strength=1){
+    if (!canPlaySfx("bumper", 0.05)) return;
+    const s = clamp(strength, 0, 1);
+    tone(540 + 120 * s, 0.045, "square", 0.024 + 0.012 * s, 0, 860 + 140 * s);
+    tone(820 + 160 * s, 0.05, "triangle", 0.018 + 0.008 * s, 0.018, 1180 + 180 * s);
   }
   function winSound(){
     beep(523.25, 0.07, "square", 0.04);
@@ -565,6 +744,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   let setupSectionHeaders = [];
   let settingsScrollY = 0;
   let settingsScrollMax = 0;
+  const settingsSliderDrag = { key: null };
   let creditsScrollY = 0;
   let creditsScrollMax = 0;
   let helpScrollY = 0;
@@ -863,6 +1043,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     input.down = false;
     input.justUp = true;
     input.pointerId = null;
+    settingsSliderDrag.key = null;
     canvas.releasePointerCapture?.(e.pointerId);
 
     const draggedSetup = (setupTouchScroll.active && e.pointerId === setupTouchScroll.pointerId && setupTouchScroll.moved);
@@ -1135,6 +1316,10 @@ function lerp(a, b, t){ return a + (b - a) * t; }
 
     bumpers: [],
     walls: [],
+    doors: {
+      openHalf: "TOP",
+      resolveHalf: "TOP"
+    },
     // Hotseat planning for two-player mode
     planOwner: 1,      // 1 or 2
     p1Ready: false,
@@ -1219,6 +1404,55 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     resetMatch();
     armOnboardingIfNeeded();
     goTo(State.GAME);
+  }
+  function triggerUnlockToast(title, subtitle){
+    unlockToast.active = true;
+    unlockToast.timer = 4.2;
+    unlockToast.title = title;
+    unlockToast.subtitle = subtitle;
+  }
+  function recordMapUnlockProgress(){
+    if (isTwoPlayerMode()){
+      mapProgress.multiplayerRounds++;
+    } else if (config.difficulty === "HARD"){
+      mapProgress.hardRounds++;
+    } else if (config.difficulty === "NORMAL"){
+      mapProgress.normalRounds++;
+    }
+    saveMapProgress();
+  }
+  function maybeUnlockBridgesStage(){
+    if (mapUnlocks.bridges) return false;
+    let unlocked = false;
+    if (isTwoPlayerMode()){
+      unlocked = true;
+    } else if (config.difficulty === "HARD"){
+      unlocked = game.seriesOver && game.seriesWinner === "player";
+    }
+    if (!unlocked) return false;
+    mapUnlocks.bridges = true;
+    saveMapUnlocks();
+    triggerUnlockToast("NEW MAP UNLOCKED", "BRIDGES");
+    beep(880, 0.08, "square", 0.05);
+    setTimeout(()=>beep(988, 0.08, "square", 0.05), 90);
+    setTimeout(()=>beep(1174, 0.10, "square", 0.06), 180);
+    return true;
+  }
+  function maybeUnlockDoorsStage(){
+    if (mapUnlocks.doors) return false;
+    const unlocked = (
+      mapProgress.multiplayerRounds >= 2 ||
+      mapProgress.hardRounds >= 2 ||
+      mapProgress.normalRounds >= 3
+    );
+    if (!unlocked) return false;
+    mapUnlocks.doors = true;
+    saveMapUnlocks();
+    triggerUnlockToast("NEW MAP UNLOCKED", "DOORS");
+    beep(784, 0.07, "square", 0.05);
+    setTimeout(()=>beep(932, 0.08, "square", 0.05), 90);
+    setTimeout(()=>beep(1174, 0.10, "square", 0.06), 180);
+    return true;
   }
 
   function getActiveButtons(){ return (state===State.PAUSE) ? ui.pauseButtons : ui.buttons; }
@@ -1347,7 +1581,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   }
 
   function unit(team, x, y, r){
-    return { team, x, y, vx:0, vy:0, r, m:1.0, alive:true, target:null };
+    return { team, x, y, vx:0, vy:0, r, m:1.0, alive:true, target:null, aiPersonality:null, aiDecisionTag:null, aiKOChance:null, aiRiskChance:null };
   }
   function computeArenaScale(){
     const minDim = Math.min(W, H);
@@ -1374,7 +1608,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       plat.radius = 0;
       plat.shape = "rect";
     } else if (circleStage){
-      const diam = Math.floor(560 * scale);
+      const diam = Math.floor(590 * scale);
       plat.w = diam;
       plat.h = diam;
       plat.x = Math.floor(W/2 - diam/2);
@@ -1394,6 +1628,187 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       plat.shape = "rect";
     }
     return { scale, footballMode, hockeyMode, fieldMode, circleStage, plat };
+  }
+  function getBridgesStageData(p=game.platform){
+    if (!p || p.shape === "circle") return null;
+    const pitW = Math.floor(clamp(p.w * 0.17, 76, 126));
+    const pitX = Math.floor(p.cx - pitW / 2);
+    const bridgeH = Math.floor(clamp(p.h * 0.19, 60, 108));
+    const bridge1Y = Math.floor(p.y + p.h * 0.13);
+    const bridge2Y = Math.floor(p.y + p.h * 0.62);
+    return {
+      pitX,
+      pitW,
+      pitY: p.y,
+      pitH: p.h,
+      left: { x: p.x, y: p.y, w: pitX - p.x, h: p.h },
+      right: { x: pitX + pitW, y: p.y, w: (p.x + p.w) - (pitX + pitW), h: p.h },
+      bridges: [
+        { x: pitX, y: bridge1Y, w: pitW, h: bridgeH },
+        { x: pitX, y: bridge2Y, w: pitW, h: bridgeH }
+      ]
+    };
+  }
+  function getBridgesSide(x, b=getBridgesStageData()){
+    if (!b) return "none";
+    if (x < b.pitX) return "left";
+    if (x > b.pitX + b.pitW) return "right";
+    return "bridge";
+  }
+  function chooseBridgeForCrossing(yA, yB, b=getBridgesStageData()){
+    if (!b || !b.bridges || !b.bridges.length) return null;
+    let best = b.bridges[0];
+    let bestScore = Infinity;
+    for (const bridge of b.bridges){
+      const cy = bridge.y + bridge.h * 0.5;
+      const score = Math.abs(yA - cy) + Math.abs(yB - cy);
+      if (score < bestScore){
+        bestScore = score;
+        best = bridge;
+      }
+    }
+    return best;
+  }
+  function getBridgeRoutePoint(u, fromX, fromY, towardX, towardY, b=getBridgesStageData()){
+    if (!b) return null;
+    const fromSide = getBridgesSide(fromX, b);
+    const toSide = getBridgesSide(towardX, b);
+    const bridge = chooseBridgeForCrossing(fromY, towardY, b);
+    if (!bridge) return null;
+    const cy = bridge.y + bridge.h * 0.5;
+    const approach = u.r + 14;
+
+    if (fromSide === "bridge"){
+      if (toSide === "left") return { x: b.pitX - approach, y: cy, bridge, mode: "exit_left" };
+      if (toSide === "right") return { x: b.pitX + b.pitW + approach, y: cy, bridge, mode: "exit_right" };
+      return { x: b.pitX + b.pitW * 0.5, y: cy, bridge, mode: "hold_bridge" };
+    }
+    if (fromSide === "left" && toSide === "right"){
+      return { x: b.pitX + Math.min(b.pitW * 0.5, game.maxMoveDist * 0.92), y: cy, bridge, mode: "cross_from_left" };
+    }
+    if (fromSide === "right" && toSide === "left"){
+      return { x: b.pitX + b.pitW - Math.min(b.pitW * 0.5, game.maxMoveDist * 0.92), y: cy, bridge, mode: "cross_from_right" };
+    }
+    if (fromSide === "left"){
+      return { x: b.pitX - approach, y: cy, bridge, mode: "approach_left" };
+    }
+    if (fromSide === "right"){
+      return { x: b.pitX + b.pitW + approach, y: cy, bridge, mode: "approach_right" };
+    }
+    return null;
+  }
+  function getDoorsStageData(p=game.platform){
+    if (!p || p.shape === "circle") return null;
+    const channelW = Math.floor(clamp(p.w * 0.10, 52, 88));
+    const channelX = Math.floor(p.cx - channelW / 2);
+    const halfH = Math.floor(p.h * 0.50);
+    return {
+      channelX,
+      channelW,
+      topOpen: { x: channelX, y: p.y, w: channelW, h: halfH },
+      botOpen: { x: channelX, y: p.y + p.h - halfH, w: channelW, h: halfH },
+      topDoor: { x: channelX, y: p.y, w: channelW, h: halfH },
+      botDoor: { x: channelX, y: p.y + halfH, w: channelW, h: p.h - halfH }
+    };
+  }
+  function buildDoorsWallsForHalf(openHalf, p=game.platform){
+    const d = getDoorsStageData(p);
+    if (!d) return [];
+    return [openHalf === "TOP" ? d.botDoor : d.topDoor];
+  }
+  function toggleDoorsOpenHalf(){
+    game.doors.openHalf = (game.doors.openHalf === "TOP") ? "BOTTOM" : "TOP";
+    game.doors.resolveHalf = game.doors.openHalf;
+  }
+  function applyDoorsStageForResolve(){
+    if (!isDoorsStage()) return;
+    toggleDoorsOpenHalf();
+    doorToggleSound();
+    game.walls.length = 0;
+    for (const w of buildDoorsWallsForHalf(game.doors.resolveHalf)){
+      game.walls.push({ x: w.x, y: w.y, w: w.w, h: w.h });
+    }
+    for (const u of [...game.team1, ...game.team2]){
+      if (!u || !u.alive) continue;
+      nudgeUnitOutOfWalls(u);
+      if (u.target){
+        nudgeUnitOutOfWalls(u);
+      }
+    }
+  }
+  function projectedDoorsOpenHalf(){
+    if (!isDoorsStage()) return game.doors.openHalf;
+    return (game.doors.openHalf === "TOP") ? "BOTTOM" : "TOP";
+  }
+  function getBridgesPlayableRects(margin=0){
+    if (!isBridgesStage() || !game.platform || game.platform.shape === "circle") return null;
+    const b = getBridgesStageData();
+    if (!b) return null;
+    const outerTop = game.platform.y + margin;
+    const outerBottom = game.platform.y + game.platform.h - margin;
+    const bridgeRects = b.bridges
+      .map(r => ({
+        x: r.x,
+        y: r.y + margin,
+        w: r.w,
+        h: Math.max(0, r.h - margin * 2)
+      }))
+      .filter(r => r.w > 0 && r.h > 0);
+    const rects = [
+      {
+        x: game.platform.x + margin,
+        y: outerTop,
+        w: Math.max(0, b.left.w - margin),
+        h: Math.max(0, outerBottom - outerTop)
+      },
+      {
+        x: b.right.x,
+        y: outerTop,
+        w: Math.max(0, game.platform.x + game.platform.w - margin - b.right.x),
+        h: Math.max(0, outerBottom - outerTop)
+      },
+      ...bridgeRects
+    ];
+    return rects.filter(r => r.w > 0 && r.h > 0);
+  }
+  function pointInAnyRect(x, y, rects){
+    if (!rects) return false;
+    for (const r of rects){
+      if (x >= r.x && x <= (r.x + r.w) && y >= r.y && y <= (r.y + r.h)) return true;
+    }
+    return false;
+  }
+  function clampPointToRects(x, y, rects){
+    if (!rects || !rects.length) return { x, y };
+    let best = null;
+    let bestD2 = Infinity;
+    for (const r of rects){
+      const cx = clamp(x, r.x, r.x + r.w);
+      const cy = clamp(y, r.y, r.y + r.h);
+      const d2 = (cx - x) * (cx - x) + (cy - y) * (cy - y);
+      if (d2 < bestD2){
+        bestD2 = d2;
+        best = { x: cx, y: cy };
+      }
+    }
+    return best || { x, y };
+  }
+  function isInsideBridgesSurface(x, y){
+    const rects = getBridgesPlayableRects(0);
+    return pointInAnyRect(x, y, rects);
+  }
+  function segmentBlockedByPitForUnit(u, x1, y1, x2, y2){
+    if (!isBridgesStage()) return false;
+    const rects = getBridgesPlayableRects(Math.max(0, u.r + 6));
+    if (!rects || !rects.length) return false;
+    const samples = 24;
+    for (let i = 1; i <= samples; i++){
+      const t = i / samples;
+      const px = lerp(x1, x2, t);
+      const py = lerp(y1, y2, t);
+      if (!pointInAnyRect(px, py, rects)) return true;
+    }
+    return false;
   }
   function rebuildStageObstacles(scale, fieldMode){
     game.bumpers.length = 0;
@@ -1418,6 +1833,12 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       const botY = Math.floor(game.platform.y + game.platform.h - nubH);
       game.walls.push({ x: nubX, y: topY, w: nubW, h: nubH });
       game.walls.push({ x: nubX, y: botY, w: nubW, h: nubH });
+    } else if (!fieldMode && config.stage === "DOORS"){
+      game.doors.openHalf = "TOP";
+      game.doors.resolveHalf = "TOP";
+      for (const w of buildDoorsWallsForHalf(game.doors.openHalf)){
+        game.walls.push({ x: w.x, y: w.y, w: w.w, h: w.h });
+      }
     }
   }
   function mapPointBetweenPlatforms(x, y, from, to){
@@ -1614,6 +2035,12 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       // Objective modes use dedicated/default map settings.
       config.stage = "CLASSIC";
     }
+    if (config.stage === "BRIDGES" && !mapUnlocks.bridges){
+      config.stage = "CLASSIC";
+    }
+    if (config.stage === "DOORS" && !mapUnlocks.doors){
+      config.stage = "CLASSIC";
+    }
 
     game.match = 1;
     game.playerWins = 0;
@@ -1651,6 +2078,9 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       const dx = x - p.cx, dy = y - p.cy;
       const rr = (p.radius - 2);
       return (dx*dx + dy*dy) <= (rr*rr);
+    }
+    if (isBridgesStage()){
+      return isInsideBridgesSurface(x, y);
     }
     return x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h;
   }
@@ -1702,6 +2132,14 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       // Circle stage rule: only out when MORE than half the unit is outside.
       const d = Math.hypot(u.x - p.cx, u.y - p.cy);
       const insideArea = circleOverlapArea(u.r, p.radius, d);
+      return insideArea >= halfUnitArea;
+    }
+    if (isBridgesStage()){
+      const rects = getBridgesPlayableRects(0);
+      let insideArea = 0;
+      for (const r of rects){
+        insideArea += circleRectOverlapArea(u.x, u.y, u.r, r.x, r.y, r.w, r.h);
+      }
       return insideArea >= halfUnitArea;
     }
     // Knockout rectangle stages use the same "more than half outside = out" rule.
@@ -1902,7 +2340,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       if (best){
         setFootballCarrier(best);
         ft.stealCooldown = 0.12;
-        beep(760, 0.035, "triangle", 0.028);
+        ballPickupSound(false);
         carrier = best;
       }
     }
@@ -1925,7 +2363,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       if (thief){
         setFootballCarrier(thief);
         ft.stealCooldown = 0.14;
-        beep(520, 0.04, "square", 0.03);
+        ballPickupSound(true);
         carrier = thief;
       }
     }
@@ -1937,10 +2375,12 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         const p = game.platform;
         const z = footballGoalLines(p);
         if (carrier.team === 1 && carrier.x >= z.right){
+          footballScoreSound();
           endRound("player");
           return true;
         }
         if (carrier.team === 2 && carrier.x <= z.left){
+          footballScoreSound();
           endRound("ai");
           return true;
         }
@@ -2069,16 +2509,27 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       }
       return { x, y };
     }
+    if (isBridgesStage()){
+      const rects = getBridgesPlayableRects(margin);
+      if (pointInAnyRect(x, y, rects)) return { x, y };
+      return clampPointToRects(x, y, rects);
+    }
     return {
       x: clamp(x, p.x + margin, p.x + p.w - margin),
       y: clamp(y, p.y + margin, p.y + p.h - margin)
     };
   }
 
-  function isInsideWallForUnit(u, x, y){
-    if (!game.walls || game.walls.length === 0) return false;
+  function getPathingWalls(){
+    if (isDoorsStage() && game.phase === "plan"){
+      return buildDoorsWallsForHalf(projectedDoorsOpenHalf());
+    }
+    return game.walls;
+  }
+  function isInsideWallForUnit(u, x, y, walls=getPathingWalls()){
+    if (!walls || walls.length === 0) return false;
     const pad = u.r + 4;
-    for (const w of game.walls){
+    for (const w of walls){
       if (x >= (w.x - pad) && x <= (w.x + w.w + pad) &&
           y >= (w.y - pad) && y <= (w.y + w.h + pad)){
         return true;
@@ -2087,10 +2538,10 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     return false;
   }
 
-  function segmentBlockedByWallsForUnit(u, x1, y1, x2, y2){
-    if (!game.walls || game.walls.length === 0) return false;
+  function segmentBlockedByWallsForUnit(u, x1, y1, x2, y2, walls=getPathingWalls()){
+    if (!walls || walls.length === 0) return false;
     const pad = u.r + 4;
-    for (const w of game.walls){
+    for (const w of walls){
       const ww = { x: w.x - pad, y: w.y - pad, w: w.w + pad*2, h: w.h + pad*2 };
       if (segIntersectsRect(x1, y1, x2, y2, ww)) return true;
     }
@@ -2118,8 +2569,24 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   }
 
   function findAIMoveTarget(u, tx, ty){
-    const desired = clampPointToPlatformForUnit(u, tx, ty);
+    const bridgeSafetyDiff = DIFF[config.difficulty] || DIFF.NORMAL;
+    const clampToMoveRange = (x, y) => {
+      const dx = x - u.x;
+      const dy = y - u.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      if (dist <= game.maxMoveDist) return { x, y };
+      const s = game.maxMoveDist / dist;
+      return { x: u.x + dx * s, y: u.y + dy * s };
+    };
+    let desired = clampPointToPlatformForUnit(u, tx, ty);
+    desired = applyAIBridgesSafety(u, desired, bridgeSafetyDiff);
+    desired = applyAIDoorsSafety(u, desired, bridgeSafetyDiff);
+    desired = clampToMoveRange(desired.x, desired.y);
     const pathBlocked = (x, y) => {
+      if (isBridgesStage()){
+        if (!pointInAnyRect(x, y, getBridgesPlayableRects(u.r + 6))) return true;
+        if (segmentBlockedByPitForUnit(u, u.x, u.y, x, y)) return true;
+      }
       if (config.stage === "WALLS"){
         if (isInsideWallForUnit(u, x, y)) return true;
         if (segmentBlockedByWallsForUnit(u, u.x, u.y, x, y)) return true;
@@ -2148,6 +2615,9 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         let cy = u.y + Math.sin(baseA + da) * dist * s;
         const clamped = clampPointToPlatformForUnit(u, cx, cy);
         cx = clamped.x; cy = clamped.y;
+        const bridgeSafe = applyAIBridgesSafety(u, { x: cx, y: cy }, bridgeSafetyDiff);
+        const doorSafe = applyAIDoorsSafety(u, bridgeSafe, bridgeSafetyDiff);
+        cx = doorSafe.x; cy = doorSafe.y;
 
         if (pathBlocked(cx, cy)) continue;
 
@@ -2161,19 +2631,46 @@ function lerp(a, b, t){ return a + (b - a) * t; }
 
     if (best) return best;
 
+    if (isBridgesStage()){
+      const route = getBridgeRoutePoint(u, u.x, u.y, desired.x, desired.y);
+      if (route){
+        const clampedRoute = clampToMoveRange(route.x, route.y);
+        const bridgeTarget = applyAIBridgesSafety(u, clampPointToPlatformForUnit(u, clampedRoute.x, clampedRoute.y), bridgeSafetyDiff);
+        if (!pathBlocked(bridgeTarget.x, bridgeTarget.y)) return bridgeTarget;
+
+        const bridgeCenter = {
+          x: route.bridge.x + route.bridge.w * 0.5,
+          y: route.bridge.y + route.bridge.h * 0.5
+        };
+        const clampedCenter = clampToMoveRange(bridgeCenter.x, bridgeCenter.y);
+        const centerTarget = applyAIBridgesSafety(u, clampPointToPlatformForUnit(u, clampedCenter.x, clampedCenter.y), bridgeSafetyDiff);
+        if (!pathBlocked(centerTarget.x, centerTarget.y)) return centerTarget;
+      }
+    }
+    if (isDoorsStage()){
+      const route = getDoorsRoutePoint(u, desired.x, desired.y);
+      if (route){
+        const clampedRoute = clampToMoveRange(route.x, route.y);
+        const doorTarget = applyAIDoorsSafety(u, clampPointToPlatformForUnit(u, clampedRoute.x, clampedRoute.y), bridgeSafetyDiff);
+        if (!pathBlocked(doorTarget.x, doorTarget.y)) return doorTarget;
+      }
+    }
+
     if (config.stage === "WALLS"){
       const p = game.platform;
       const side = (u.x < p.cx) ? -1 : 1;
       const safeX = clamp(p.cx + side * (p.w * 0.22), p.x + u.r + 6, p.x + p.w - u.r - 6);
       const lanes = [p.y + p.h * 0.22, p.y + p.h * 0.78];
       for (const ly of lanes){
-        const c = clampPointToPlatformForUnit(u, safeX, ly);
+        const clamped = clampToMoveRange(safeX, ly);
+        const c = clampPointToPlatformForUnit(u, clamped.x, clamped.y);
         if (!pathBlocked(c.x, c.y)){
           return c;
         }
       }
       {
-        const c = clampPointToPlatformForUnit(u, safeX, u.y);
+        const clamped = clampToMoveRange(safeX, u.y);
+        const c = clampPointToPlatformForUnit(u, clamped.x, clamped.y);
         if (!pathBlocked(c.x, c.y)) return c;
       }
     }
@@ -2183,7 +2680,8 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       const safeX = clamp(desired.x, p.x + u.r + 6, p.x + p.w - u.r - 6);
       const lanes = [p.y + p.h * 0.18, p.y + p.h * 0.34, p.y + p.h * 0.66, p.y + p.h * 0.82];
       for (const ly of lanes){
-        const c = clampPointToPlatformForUnit(u, safeX, ly);
+        const clamped = clampToMoveRange(safeX, ly);
+        const c = clampPointToPlatformForUnit(u, clamped.x, clamped.y);
         if (!pathBlocked(c.x, c.y)){
           return c;
         }
@@ -2192,7 +2690,8 @@ function lerp(a, b, t){ return a + (b - a) * t; }
 
     if (config.stage === "BUMPER3" && isInsideBumperForUnit(u, desired.x, desired.y)){
       const p = game.platform;
-      const c = clampPointToPlatformForUnit(u, p.cx, desired.y);
+      const clamped = clampToMoveRange(p.cx, desired.y);
+      const c = clampPointToPlatformForUnit(u, clamped.x, clamped.y);
       if (!pathBlocked(c.x, c.y)) return c;
     }
 
@@ -2217,6 +2716,10 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     if (!isKnockoutMode() && !isKeepAwayMode()) return target;
     const p = game.platform;
     if (!p) return target;
+
+    if (isBridgesStage()){
+      return applyAIBridgesSafety(u, target, diff);
+    }
 
     if (p.shape !== "circle"){
       // Rectangle knockout stages (classic/bumpers/walls): keep AI away from risky border hugging,
@@ -2271,6 +2774,104 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     }
     return { x: tx, y: ty };
   }
+  function applyAIBridgesSafety(u, target, diff){
+    if (!isBridgesStage()) return target;
+    const p = game.platform;
+    const b = getBridgesStageData(p);
+    if (!p || !b) return target;
+
+    const safety = clamp((diff && diff.edgeSafety) || 0, 0, 1);
+    const outerMargin = u.r + 8;
+    const lipInset = 12 + safety * 16;
+    let tx = target.x;
+    let ty = target.y;
+    const side = getBridgesSide(tx, b);
+
+    if (side === "left"){
+      tx = clamp(tx, p.x + outerMargin, b.pitX - outerMargin - lipInset);
+      ty = clamp(ty, p.y + outerMargin, p.y + p.h - outerMargin);
+      return { x: tx, y: ty };
+    }
+    if (side === "right"){
+      tx = clamp(tx, b.pitX + b.pitW + outerMargin + lipInset, p.x + p.w - outerMargin);
+      ty = clamp(ty, p.y + outerMargin, p.y + p.h - outerMargin);
+      return { x: tx, y: ty };
+    }
+
+    let bridge = null;
+    for (const r of b.bridges){
+      if (ty >= r.y && ty <= (r.y + r.h)){
+        bridge = r;
+        break;
+      }
+    }
+    if (!bridge) bridge = chooseBridgeForCrossing(u.y, ty, b) || b.bridges[0];
+
+    const xInset = u.r + 8 + safety * 5;
+    const yInset = u.r + 8 + safety * 8;
+    const cy = bridge.y + bridge.h * 0.5;
+    tx = clamp(tx, bridge.x + xInset, bridge.x + bridge.w - xInset);
+    ty = clamp(lerp(ty, cy, 0.40 + safety * 0.32), bridge.y + yInset, bridge.y + bridge.h - yInset);
+    return { x: tx, y: ty };
+  }
+  function getDoorsOpenLaneCenter(openHalf=projectedDoorsOpenHalf(), p=game.platform){
+    const d = getDoorsStageData(p);
+    if (!d) return { x: p.cx, y: p.cy };
+    const lane = (openHalf === "TOP") ? d.topOpen : d.botOpen;
+    return {
+      x: lane.x + lane.w * 0.5,
+      y: lane.y + lane.h * 0.5
+    };
+  }
+  function getDoorsRoutePoint(u, towardX, towardY, openHalf=projectedDoorsOpenHalf(), p=game.platform){
+    const d = getDoorsStageData(p);
+    if (!d) return null;
+    const lane = (openHalf === "TOP") ? d.topOpen : d.botOpen;
+    const side = towardX < p.cx ? -1 : 1;
+    const approach = u.r + 14;
+    const targetSide = towardY < (p.y + p.h * 0.5) ? "TOP" : "BOTTOM";
+    const laneCenter = getDoorsOpenLaneCenter(openHalf, p);
+    if (targetSide === openHalf){
+      return {
+        x: p.cx + side * Math.min(d.channelW * 0.45, approach),
+        y: clamp(towardY, lane.y + u.r + 8, lane.y + lane.h - u.r - 8),
+        mode: "lane_cross"
+      };
+    }
+    return {
+      x: p.cx + side * approach,
+      y: laneCenter.y,
+      mode: "lane_approach"
+    };
+  }
+  function applyAIDoorsSafety(u, target, diff){
+    if (!isDoorsStage()) return target;
+    const p = game.platform;
+    const d = getDoorsStageData(p);
+    if (!p || !d) return target;
+    const safety = clamp((diff && diff.edgeSafety) || 0, 0, 1);
+    const margin = u.r + 8;
+    const lane = projectedDoorsOpenHalf() === "TOP" ? d.topOpen : d.botOpen;
+    let tx = clamp(target.x, p.x + margin, p.x + p.w - margin);
+    let ty = clamp(target.y, p.y + margin, p.y + p.h - margin);
+
+    const blockedHalf = projectedDoorsOpenHalf() === "TOP" ? d.botDoor : d.topDoor;
+    if (tx >= blockedHalf.x - margin && tx <= blockedHalf.x + blockedHalf.w + margin &&
+        ty >= blockedHalf.y - margin && ty <= blockedHalf.y + blockedHalf.h + margin){
+      const route = getDoorsRoutePoint(u, tx, ty, projectedDoorsOpenHalf(), p);
+      if (route){
+        tx = route.x;
+        ty = route.y;
+      }
+    }
+
+    const lanePull = clamp(0.18 + safety * 0.28, 0.18, 0.44);
+    if (Math.abs(tx - p.cx) < d.channelW * 0.85){
+      ty = lerp(ty, lane.y + lane.h * 0.5, lanePull);
+      ty = clamp(ty, lane.y + margin, lane.y + lane.h - margin);
+    }
+    return { x: tx, y: ty };
+  }
 
   function aiPlanTargets(){
     const diffBase = DIFF[config.difficulty] || DIFF.NORMAL;
@@ -2280,6 +2881,12 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       edgeSafety: clamp(diffBase.edgeSafety + aiMod.edgeSafetyAdd, 0, 1),
       circleSafety: clamp(diffBase.circleSafety + aiMod.edgeSafetyAdd * 0.9, 0, 1)
     };
+    for (const a of game.team2){
+      a.aiPersonality = null;
+      a.aiDecisionTag = null;
+      a.aiKOChance = null;
+      a.aiRiskChance = null;
+    }
     if (isKeepAwayMode()){
       const p = game.platform;
       const carrier = getFootballCarrierUnit();
@@ -2436,7 +3043,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
           ty = game.football.y + rand(-diff.aimJitter * 0.45, diff.aimJitter * 0.45);
         }
 
-        const safe = clampPointToPlatformForUnit(a, tx, ty);
+        const safe = findAIMoveTarget(a, tx, ty);
         a.target = { x: safe.x, y: safe.y };
       }
       return;
@@ -2572,6 +3179,10 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const livingOpp = game.team1.filter(u => u.alive);
     const livingAI = game.team2.filter(u => u.alive);
     for (const a of game.team2){
+      a.aiPersonality = null;
+      a.aiDecisionTag = null;
+      a.aiKOChance = null;
+      a.aiRiskChance = null;
       if (!a.alive) a.target = null;
     }
     if (livingOpp.length === 0 || livingAI.length === 0) return;
@@ -2589,6 +3200,15 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const isEasy = config.difficulty === "EASY";
     const isNormal = config.difficulty === "NORMAL";
     const isHard = config.difficulty === "HARD";
+    const AI_PERSONALITY_PROFILES = Object.freeze({
+      STANDARD: { name: "standard", attack: 1.00, finish: 1.00, protect: 1.00, predict: 1.00, guard: 1.00, risk: 1.00, center: 1.00, assignVulnerability: 1.00, assignDanger: 1.00, claim: 1.00, laneBlock: 1.00, refine: 0, pressure: 1.00 },
+      AGGRESSIVE: { name: "aggressive", attack: 1.42, finish: 1.52, protect: 0.62, predict: 1.18, guard: 0.84, risk: 0.72, center: 0.78, assignVulnerability: 1.38, assignDanger: 1.18, claim: 0.80, laneBlock: 1.12, refine: 2, pressure: 1.28 },
+      DEFENDER: { name: "defender", attack: 0.88, finish: 0.82, protect: 1.38, predict: 1.02, guard: 1.34, risk: 1.18, center: 1.08, assignVulnerability: 0.84, assignDanger: 1.28, claim: 1.10, laneBlock: 1.22, refine: 1, pressure: 0.94 },
+      PREDICTOR: { name: "predictor", attack: 1.02, finish: 1.00, protect: 0.96, predict: 1.44, guard: 1.08, risk: 1.02, center: 0.98, assignVulnerability: 0.96, assignDanger: 1.16, claim: 0.96, laneBlock: 1.38, refine: 2, pressure: 1.06 },
+      BALANCED: { name: "balanced", attack: 1.04, finish: 1.02, protect: 1.06, predict: 1.06, guard: 1.06, risk: 1.00, center: 1.04, assignVulnerability: 1.00, assignDanger: 1.00, claim: 1.00, laneBlock: 1.04, refine: 1, pressure: 1.02 }
+    });
+    const NORMAL_PERSONALITY_PATTERN = Object.freeze(["AGGRESSIVE", "BALANCED", "AGGRESSIVE", "BALANCED", "BALANCED"]);
+    const HARD_PERSONALITY_PATTERN = Object.freeze(["AGGRESSIVE", "DEFENDER", "PREDICTOR", "BALANCED", "AGGRESSIVE"]);
 
     let candidatesCount = clamp(Math.round(
       6 +
@@ -2622,11 +3242,11 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       spacingStrength = clamp(spacingStrength + 0.09, 0.08, 0.90);
       randomness = clamp(randomness * 0.84, 0.03, 0.40);
     } else if (isHard){
-      candidatesCount = Math.min(23, candidatesCount + 7);
-      lookahead = clamp(lookahead + 0.20, 0.30, 0.97);
-      coordStrength = clamp(coordStrength + 0.24, 0.17, 0.99);
-      spacingStrength = clamp(spacingStrength + 0.18, 0.11, 0.95);
-      randomness = clamp(randomness * 0.50, 0.01, 0.26);
+      candidatesCount = Math.min(24, candidatesCount + 9);
+      lookahead = clamp(lookahead + 0.25, 0.34, 0.98);
+      coordStrength = clamp(coordStrength + 0.28, 0.20, 0.995);
+      spacingStrength = clamp(spacingStrength + 0.20, 0.14, 0.96);
+      randomness = clamp(randomness * 0.34, 0.005, 0.20);
     }
     candidatesCount = clamp(Math.round(candidatesCount + aiMod.candidatesDelta), 5, 24);
     lookahead = clamp(lookahead * aiMod.lookaheadMul, 0.16, 0.97);
@@ -2657,6 +3277,42 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       const dy = py - sy;
       return { t, sx, sy, d2: dx * dx + dy * dy };
     };
+    const estimateKOCandidateChance = (a, cand, opp, meta, moveDir, moveLen) => {
+      const pred = meta.pred;
+      const hit = pointSegData(a.x, a.y, cand.x, cand.y, pred.x, pred.y);
+      const hitR = a.r + opp.r + 9 + diff.intercept * 7;
+      if (hit.d2 > hitR * hitR){
+        return {
+          chance: 0,
+          koPotential: 0,
+          towardOut: 0,
+          edgeSwing: 0,
+          contactChance: 0
+        };
+      }
+
+      const contactChance = clamp(1 - Math.sqrt(hit.d2) / hitR, 0, 1);
+      const toEnemy = normalize(pred.x - a.x, pred.y - a.y);
+      const pushDir = normalize(moveDir.x * 0.72 + toEnemy.x * 0.28, moveDir.y * 0.72 + toEnemy.y * 0.28);
+      const pushAmt = 10 + moveLen * 0.36;
+      const eFuture = clampPointToPlatformForUnit(opp, pred.x + pushDir.x * pushAmt, pred.y + pushDir.y * pushAmt);
+      const eRawFuture = edgeInfoFor(opp, pred.x + pushDir.x * pushAmt, pred.y + pushDir.y * pushAmt);
+      const eNowEdge = meta.eEdge;
+      const eFutureEdge = edgeInfoFor(opp, eFuture.x, eFuture.y);
+      const towardOut = Math.max(0, pushDir.x * eNowEdge.nx + pushDir.y * eNowEdge.ny);
+      const edgeSwing = clamp((eNowEdge.dist - eFutureEdge.dist) / Math.max(8, edgeRef * 0.70), -1, 1);
+      const edgePressure = clamp(1 - eNowEdge.dist / Math.max(10, edgeRef * 0.82), 0, 1);
+      const koPotential = clamp((-eRawFuture.dist + 4) / Math.max(8, opp.r + 8), 0, 1);
+      const chance = clamp(
+        koPotential * 0.52 +
+        contactChance * 0.16 +
+        towardOut * 0.14 +
+        Math.max(0, edgeSwing) * 0.10 +
+        edgePressure * 0.08,
+        0, 1
+      );
+      return { chance, koPotential, towardOut, edgeSwing, contactChance };
+    };
 
     const edgeInfoFor = (u, x, y) => {
       const margin = u.r + 6;
@@ -2666,6 +3322,42 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         const d = Math.hypot(dx, dy) || 1;
         const raw = p.radius - d;
         return { dist: raw - margin, nx: dx / d, ny: dy / d };
+      }
+      if (isBridgesStage()){
+        const b = getBridgesStageData(p);
+        let dist = x - p.x - margin;
+        let nx = -1, ny = 0;
+
+        const candidates = [
+          { dist: x - p.x - margin, nx: -1, ny: 0 },
+          { dist: (p.x + p.w) - x - margin, nx: 1, ny: 0 },
+          { dist: y - p.y - margin, nx: 0, ny: -1 },
+          { dist: (p.y + p.h) - y - margin, nx: 0, ny: 1 }
+        ];
+
+        const onBridgeBand = b.bridges.some(r => y >= r.y && y <= (r.y + r.h));
+        if (x < b.pitX && !onBridgeBand){
+          candidates.push({ dist: b.pitX - x, nx: 1, ny: 0 });
+        } else if (x > (b.pitX + b.pitW) && !onBridgeBand){
+          candidates.push({ dist: x - (b.pitX + b.pitW), nx: -1, ny: 0 });
+        } else if (x >= b.pitX && x <= (b.pitX + b.pitW)){
+          for (const r of b.bridges){
+            if (y >= r.y && y <= (r.y + r.h)){
+              candidates.push({ dist: y - r.y, nx: 0, ny: -1 });
+              candidates.push({ dist: (r.y + r.h) - y, nx: 0, ny: 1 });
+              break;
+            }
+          }
+        }
+
+        for (const c of candidates){
+          if (c.dist < dist){
+            dist = c.dist;
+            nx = c.nx;
+            ny = c.ny;
+          }
+        }
+        return { dist, nx, ny };
       }
       const dl = x - p.x - margin;
       const dr = (p.x + p.w) - x - margin;
@@ -2690,11 +3382,49 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       const ny = Math.abs(y - p.cy) / ry;
       return clamp(1 - Math.max(nx, ny), 0, 1);
     };
+    const bridges = isBridgesStage() ? getBridgesStageData(p) : null;
+    const doors = isDoorsStage() ? getDoorsStageData(p) : null;
+    const bridgeSideFor = (x) => bridges ? getBridgesSide(x, bridges) : "flat";
+    const bridgeChoiceFor = (yA, yB) => bridges ? chooseBridgeForCrossing(yA, yB, bridges) : null;
+    const bridgeMouthPoint = (side, bridge, inset=0) => {
+      if (!bridges || !bridge) return { x: p.cx, y: p.cy };
+      const pad = inset;
+      return {
+        x: (side === "left")
+          ? (bridges.pitX - pad)
+          : (bridges.pitX + bridges.pitW + pad),
+        y: bridge.y + bridge.h * 0.5
+      };
+    };
+    const routeViaBridge = (u, tx, ty) => {
+      if (!bridges) return { x: tx, y: ty };
+      const route = getBridgeRoutePoint(u, u.x, u.y, tx, ty, bridges);
+      if (!route) return { x: tx, y: ty };
+      return { x: route.x, y: route.y, bridge: route.bridge, mode: route.mode };
+    };
+    const projectedDoorHalf = projectedDoorsOpenHalf();
+    const doorLaneCenter = doors ? getDoorsOpenLaneCenter(projectedDoorHalf, p) : { x: p.cx, y: p.cy };
+    const routeViaDoor = (u, tx, ty) => {
+      if (!doors) return { x: tx, y: ty };
+      const route = getDoorsRoutePoint(u, tx, ty, projectedDoorHalf, p);
+      if (!route) return { x: tx, y: ty };
+      return { x: route.x, y: route.y, mode: route.mode };
+    };
+    const safeAnchorFor = (u) => {
+      let anchor = { x: p.cx, y: p.cy };
+      if (bridges){
+        const side = bridgeSideFor(u.x);
+        if (side === "left") anchor = { x: bridges.pitX - Math.max(28, u.r + 18), y: p.cy };
+        else if (side === "right") anchor = { x: bridges.pitX + bridges.pitW + Math.max(28, u.r + 18), y: p.cy };
+      } else if (doors){
+        anchor = { x: p.cx, y: doorLaneCenter.y };
+      }
+      return clampPointToPlatformForUnit(u, anchor.x, anchor.y);
+    };
 
     const enemyIds = new Map();
     for (let i = 0; i < livingOpp.length; i++) enemyIds.set(livingOpp[i], i);
 
-    const enemyPred = new Map();
     const enemyMeta = new Map();
     const predNoise = diff.aimJitter * (0.03 + diff.leadJitter * 0.06) * (0.48 + randomness * 0.8);
 
@@ -2723,8 +3453,6 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       px += rand(-predNoise, predNoise);
       py += rand(-predNoise, predNoise);
       const pred = clampPointToPlatformForUnit(opp, px, py);
-      enemyPred.set(opp, pred);
-
       const eEdge = edgeInfoFor(opp, pred.x, pred.y);
       const vulnerability = clamp(1 - (eEdge.dist / edgeRef), 0, 1);
       let danger = vulnerability * 0.45;
@@ -2736,6 +3464,9 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       }
       danger += intentMag * 0.20;
       const intentEnd = clampPointToPlatformForUnit(opp, intentEndX, intentEndY);
+      const bridgeSide = bridgeSideFor(pred.x);
+      const targetBridge = bridges ? bridgeChoiceFor(opp.y, intentEnd.y) : null;
+      const intentDoorHalf = doors ? (intentEnd.y < p.cy ? "TOP" : "BOTTOM") : null;
       enemyMeta.set(opp, {
         pred,
         eEdge,
@@ -2743,9 +3474,75 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         danger,
         intentDir: { x: intentDirX, y: intentDirY },
         intentMag,
-        intentEnd
+        intentEnd,
+        bridgeSide,
+        targetBridge,
+        intentDoorHalf
       });
     }
+
+    const estimateSelfKOCandidateChance = (a, cand, moveDir, moveLen) => {
+      const selfEdgeNow = edgeInfoFor(a, a.x, a.y);
+      const selfEdgeEnd = edgeInfoFor(a, cand.x, cand.y);
+      const outwardSelf = Math.max(0, (moveDir.x * selfEdgeEnd.nx + moveDir.y * selfEdgeEnd.ny));
+      const edgePressure = clamp(1 - selfEdgeEnd.dist / Math.max(10, edgeRef * 0.82), 0, 1);
+      const edgeWorsen = clamp((selfEdgeNow.dist - selfEdgeEnd.dist) / Math.max(10, edgeRef * 0.72), -1, 1);
+
+      let enemyPunishChance = 0;
+      let laneThreat = 0;
+      for (const opp of livingOpp){
+        const meta = enemyMeta.get(opp);
+        const pred = meta.pred;
+        const toSelf = normalize(cand.x - pred.x, cand.y - pred.y);
+        const attackLen = Math.min(game.maxMoveDist, Math.hypot(cand.x - pred.x, cand.y - pred.y));
+        const attackCand = {
+          x: pred.x + toSelf.x * attackLen,
+          y: pred.y + toSelf.y * attackLen
+        };
+        const punishEval = estimateKOCandidateChance(
+          opp,
+          attackCand,
+          a,
+          { pred: { x: cand.x, y: cand.y }, eEdge: selfEdgeEnd },
+          toSelf,
+          attackLen
+        );
+        enemyPunishChance = Math.max(enemyPunishChance, punishEval.chance * (0.72 + meta.intentMag * 0.28));
+
+        if (opp.target && meta.intentMag > 0.08){
+          const lane = pointSegData(opp.x, opp.y, opp.target.x, opp.target.y, cand.x, cand.y);
+          const laneR = a.r + opp.r + 16;
+          laneThreat = Math.max(laneThreat, clamp(1 - Math.sqrt(lane.d2) / laneR, 0, 1) * (0.66 + meta.intentMag * 0.34));
+        }
+      }
+
+      let stageHazard = 0;
+      if (bridges){
+        const bridge = bridgeChoiceFor(cand.y, cand.y);
+        const onBridge = bridge && cand.x >= bridge.x && cand.x <= (bridge.x + bridge.w);
+        if (onBridge){
+          const railDist = Math.min(cand.y - bridge.y, bridge.y + bridge.h - cand.y);
+          stageHazard = Math.max(stageHazard, clamp(1 - railDist / Math.max(16, bridge.h * 0.28), 0, 1));
+        } else {
+          const side = bridgeSideFor(cand.x);
+          if (side !== "bridge"){
+            const trenchGap = Math.min(Math.abs(cand.x - bridges.pitX), Math.abs(cand.x - (bridges.pitX + bridges.pitW)));
+            stageHazard = Math.max(stageHazard, clamp(1 - trenchGap / Math.max(22, a.r + 20), 0, 1) * 0.72);
+          }
+        }
+      }
+
+      const chance = clamp(
+        edgePressure * 0.34 +
+        outwardSelf * 0.18 +
+        Math.max(0, edgeWorsen) * 0.08 +
+        enemyPunishChance * 0.28 +
+        laneThreat * 0.08 +
+        stageHazard * 0.04,
+        0, 1
+      );
+      return { chance, edgePressure, outwardSelf, edgeWorsen, enemyPunishChance, laneThreat, stageHazard };
+    };
 
     let finisherEnemy = livingOpp[0];
     let disruptorEnemy = livingOpp[0];
@@ -2773,56 +3570,134 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       }
     }
 
+    const personalityFor = new Map();
+    const personalityProfileFor = (u) => {
+      const key = personalityFor.get(u) || "STANDARD";
+      return AI_PERSONALITY_PROFILES[key] || AI_PERSONALITY_PROFILES.STANDARD;
+    };
+    if (!isEasy){
+      const pattern = isHard ? HARD_PERSONALITY_PATTERN : NORMAL_PERSONALITY_PATTERN;
+      for (const a of livingAI){
+        const slot = Math.max(0, game.team2.indexOf(a));
+        const personalityKey = pattern[slot % pattern.length] || "BALANCED";
+        personalityFor.set(a, personalityKey);
+        a.aiPersonality = personalityKey;
+      }
+    }
+
     const roleFor = new Map();
     if (coordStrength < 0.20){
       for (const a of livingAI) roleFor.set(a, "hunter");
     } else {
-      let finisherUnit = livingAI[0];
-      let bestFD = Infinity;
+      const chooseClosestUnit = (units, tx, ty, excludeSet=null) => {
+        let best = null;
+        let bestD = Infinity;
+        for (const u of units){
+          if (excludeSet && excludeSet.has(u)) continue;
+          const d = Math.hypot(u.x - tx, u.y - ty);
+          if (d < bestD){
+            bestD = d;
+            best = u;
+          }
+        }
+        return best;
+      };
       const finPred = enemyMeta.get(finisherEnemy).pred;
-      for (const a of livingAI){
-        const d = Math.hypot(a.x - finPred.x, a.y - finPred.y);
-        if (d < bestFD){ bestFD = d; finisherUnit = a; }
-      }
+      const aggressiveUnits = livingAI.filter(a => personalityProfileFor(a).name === "aggressive");
+      const predictorUnits = livingAI.filter(a => personalityProfileFor(a).name === "predictor");
+      const defenderUnits = livingAI.filter(a => personalityProfileFor(a).name === "defender");
+
+      let finisherUnit = chooseClosestUnit(aggressiveUnits.length ? aggressiveUnits : livingAI, finPred.x, finPred.y) || livingAI[0];
       roleFor.set(finisherUnit, "finisher");
 
-      let disruptorUnit = null;
-      let bestDD = Infinity;
       const disPred = enemyMeta.get(disruptorEnemy).pred;
-      for (const a of livingAI){
-        if (a === finisherUnit) continue;
-        const d = Math.hypot(a.x - disPred.x, a.y - disPred.y);
-        if (d < bestDD){ bestDD = d; disruptorUnit = a; }
-      }
+      const taken = new Set([finisherUnit]);
+      const disruptorUnit = chooseClosestUnit(
+        predictorUnits.length ? predictorUnits : livingAI,
+        disPred.x, disPred.y,
+        taken
+      );
       if (disruptorUnit) roleFor.set(disruptorUnit, "disruptor");
+      if (disruptorUnit) taken.add(disruptorUnit);
+
+      const supportAnchor = allyAtRisk || livingAI[0];
+      const supportUnit = chooseClosestUnit(
+        defenderUnits.length ? defenderUnits : livingAI,
+        supportAnchor.x, supportAnchor.y,
+        taken
+      );
+      if (supportUnit) roleFor.set(supportUnit, "support");
 
       for (const a of livingAI){
-        if (!roleFor.has(a)) roleFor.set(a, "support");
+        if (roleFor.has(a)) continue;
+        const personality = personalityProfileFor(a).name;
+        if (personality === "aggressive") roleFor.set(a, "finisher");
+        else if (personality === "predictor") roleFor.set(a, "disruptor");
+        else roleFor.set(a, "support");
       }
     }
-
     const enemyClaims = new Map();
     const reservedSpots = [];
+    const LOW_COMMIT_TAGS = new Set([
+      "center_hold",
+      "bodyguard",
+      "bodyguard_hold",
+      "protect_lane",
+      "door_guard",
+      "bridge_guard",
+      "bridge_entry",
+      "bridge_center",
+      "door_center",
+      "fallback"
+    ]);
+    const commitFloorFor = (u, tag, focusEnemy) => {
+      if (!focusEnemy || LOW_COMMIT_TAGS.has(tag)) return 0;
+      const personality = personalityProfileFor(u);
+      if (personality.name === "aggressive") return isHard ? 0.88 : isNormal ? 0.76 : 0;
+      if (personality.name === "predictor") return isHard ? 0.80 : isNormal ? 0.66 : 0;
+      if (personality.name === "balanced") return isHard ? 0.74 : isNormal ? 0.58 : 0;
+      if (personality.name === "defender") return isHard ? 0.68 : isNormal ? 0.54 : 0;
+      return isHard ? 0.72 : isNormal ? 0.56 : 0;
+    };
 
     const pickAssignedEnemy = (a, role) => {
+      const personality = personalityProfileFor(a);
       let best = finisherEnemy;
       let bestScore2 = -1e9;
       for (const opp of livingOpp){
         const meta = enemyMeta.get(opp);
         const pred = meta.pred;
         const d = Math.hypot(pred.x - a.x, pred.y - a.y);
-        let s = meta.vulnerability * 42 + meta.danger * 34 +
+        const directVec = normalize(pred.x - a.x, pred.y - a.y);
+        const probeCand = {
+          x: a.x + directVec.x * game.maxMoveDist,
+          y: a.y + directVec.y * game.maxMoveDist
+        };
+        const koProbe = estimateKOCandidateChance(a, probeCand, opp, meta, directVec, game.maxMoveDist);
+        let s = meta.vulnerability * 42 * personality.assignVulnerability +
+          meta.danger * 34 * personality.assignDanger +
           (1 - clamp(d / (game.maxMoveDist * 1.6), 0, 1)) * 28;
-        if (isHard){
-          s += meta.intentMag * 18;
+        if (isHard || personality.predict > 1.08){
+          s += meta.intentMag * 18 * personality.predict;
           const toThreat = Math.hypot(meta.intentEnd.x - a.x, meta.intentEnd.y - a.y);
-          s += (1 - clamp(toThreat / (game.maxMoveDist * 1.35), 0, 1)) * 14;
+          s += (1 - clamp(toThreat / (game.maxMoveDist * 1.35), 0, 1)) * 14 * personality.predict;
         }
-        if (role === "finisher") s += meta.vulnerability * 56;
-        else if (role === "disruptor") s += meta.danger * 52;
-        else s += (1 - meta.vulnerability) * 8;
+        if (role === "finisher") s += meta.vulnerability * 56 * personality.finish;
+        else if (role === "disruptor") s += meta.danger * 52 * Math.max(personality.predict, personality.assignDanger);
+        else s += (1 - meta.vulnerability) * 8 * personality.protect;
+        s += koProbe.chance * (isHard ? 62 : isNormal ? 34 : 16) * personality.finish;
+        if (isHard){
+          const safeAnchor = safeAnchorFor(opp);
+          const recoveryDist = Math.hypot(meta.intentEnd.x - safeAnchor.x, meta.intentEnd.y - safeAnchor.y);
+          s += (1 - clamp(recoveryDist / (game.maxMoveDist * 1.55), 0, 1)) * 16 * personality.predict;
+          s += meta.intentMag * 10 * personality.predict;
+        }
+        if (personality.name === "defender" && allyAtRisk){
+          const threatLane = Math.hypot(pred.x - allyAtRisk.x, pred.y - allyAtRisk.y);
+          s += (1 - clamp(threatLane / (game.maxMoveDist * 1.55), 0, 1)) * 24;
+        }
         const claims = enemyClaims.get(enemyIds.get(opp)) || 0;
-        s -= claims * (5 + coordStrength * 22);
+        s -= claims * (5 + coordStrength * 22) * personality.claim;
         if (s > bestScore2){
           bestScore2 = s;
           best = opp;
@@ -2837,6 +3712,12 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       const mdx = tx - u.x;
       const mdy = ty - u.y;
       const mlen = Math.hypot(mdx, mdy) || 1;
+      const commitFloor = commitFloorFor(u, tag, focusEnemy);
+      if (mlen > 1 && commitFloor > 0 && mlen < game.maxMoveDist * commitFloor){
+        const s = (game.maxMoveDist * commitFloor) / mlen;
+        tx = u.x + mdx * s;
+        ty = u.y + mdy * s;
+      }
       if (mlen > game.maxMoveDist){
         const s = game.maxMoveDist / mlen;
         tx = u.x + mdx * s;
@@ -2844,8 +3725,17 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       }
 
       let safe = clampPointToPlatformForUnit(u, tx, ty);
+      if (isBridgesStage() && segmentBlockedByPitForUnit(u, u.x, u.y, safe.x, safe.y)){
+        const route = getBridgeRoutePoint(u, u.x, u.y, safe.x, safe.y);
+        if (route) safe = { x: route.x, y: route.y };
+      }
+      if (isDoorsStage() && segmentBlockedByWallsForUnit(u, u.x, u.y, safe.x, safe.y, buildDoorsWallsForHalf(projectedDoorHalf))){
+        const route = getDoorsRoutePoint(u, safe.x, safe.y, projectedDoorHalf, p);
+        if (route) safe = { x: route.x, y: route.y };
+      }
       safe = findAIMoveTarget(u, safe.x, safe.y);
       safe = applyAICircleSafety(u, safe, diff);
+      safe = applyAIDoorsSafety(u, safe, diff);
 
       for (const c of list){
         if (Math.hypot(c.x - safe.x, c.y - safe.y) < minSep) return false;
@@ -2855,21 +3745,23 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     };
 
     const buildCandidates = (a, role, assignedEnemy) => {
+      const personality = personalityProfileFor(a);
       const out = [];
       const ap = enemyMeta.get(assignedEnemy).pred;
+      const am = enemyMeta.get(assignedEnemy);
       const av = normalize(ap.x - a.x, ap.y - a.y);
       const perp = { x: -av.y, y: av.x };
 
       const clutchAttackBoost = 1 + knockoutClutchAggro * 0.22;
       const attackFar = game.maxMoveDist * clamp((0.78 + diff.pressure * 0.12) * aiMod.attackDistMul * clutchAttackBoost, 0.64, 0.98);
       const attackMid = game.maxMoveDist * clamp((0.48 + diff.fastShotBias * 0.16) * aiMod.attackDistMul * (1 + knockoutClutchAggro * 0.20), 0.36, 0.74);
-      addCandidate(out, a, a.x + av.x * attackFar, a.y + av.y * attackFar, assignedEnemy, "direct_far");
-      addCandidate(out, a, a.x + av.x * attackMid, a.y + av.y * attackMid, assignedEnemy, "direct_mid");
-      if (isHard){
-        const am = enemyMeta.get(assignedEnemy);
+      addCandidate(out, a, a.x + av.x * attackFar * personality.attack, a.y + av.y * attackFar * personality.attack, assignedEnemy, "direct_far");
+      addCandidate(out, a, a.x + av.x * attackMid * personality.attack, a.y + av.y * attackMid * personality.attack, assignedEnemy, "direct_mid");
+      if (isHard || personality.predict > 1.08){
         if (assignedEnemy.target && am.intentMag > 0.12){
-          const ix = lerp(am.pred.x, am.intentEnd.x, 0.52);
-          const iy = lerp(am.pred.y, am.intentEnd.y, 0.52);
+          const lead = clamp(0.52 + (personality.predict - 1) * 0.22, 0.46, 0.72);
+          const ix = lerp(am.pred.x, am.intentEnd.x, lead);
+          const iy = lerp(am.pred.y, am.intentEnd.y, lead);
           const behind = (a.r + assignedEnemy.r) * 0.62 + 9;
           addCandidate(out, a, ix - am.intentDir.x * behind, iy - am.intentDir.y * behind, assignedEnemy, "counter_lane");
 
@@ -2878,19 +3770,82 @@ function lerp(a, b, t){ return a + (b - a) * t; }
           const sideY = am.intentDir.x * sideSign;
           const shoulder = a.r + assignedEnemy.r + 13;
           addCandidate(out, a, ix + sideX * shoulder, iy + sideY * shoulder, assignedEnemy, "counter_shoulder");
+          if (personality.name === "aggressive"){
+            const allInX = am.intentEnd.x + am.intentDir.x * (game.maxMoveDist * 0.22 + assignedEnemy.r * 0.6);
+            const allInY = am.intentEnd.y + am.intentDir.y * (game.maxMoveDist * 0.22 + assignedEnemy.r * 0.6);
+            addCandidate(out, a, allInX, allInY, assignedEnemy, "all_in_predict");
+          }
+          if (personality.name === "predictor"){
+            addCandidate(out, a, lerp(ix, am.intentEnd.x, 0.42), lerp(iy, am.intentEnd.y, 0.42), assignedEnemy, "predict_cut");
+          }
+        }
+      }
+
+      if (bridges){
+        const mySide = bridgeSideFor(a.x);
+        const enemySide = am.bridgeSide;
+        const crossBridge = bridgeChoiceFor(a.y, ap.y);
+        if (crossBridge){
+          const myApproach = bridgeMouthPoint(mySide === "right" ? "right" : "left", crossBridge, a.r + 10);
+          const farApproach = bridgeMouthPoint(enemySide === "left" ? "left" : "right", crossBridge, a.r + 10);
+
+          if (mySide !== enemySide && mySide !== "bridge" && enemySide !== "bridge"){
+            const route = routeViaBridge(a, ap.x, ap.y);
+            addCandidate(out, a, route.x, route.y, assignedEnemy, "bridge_cross");
+            addCandidate(out, a, myApproach.x, myApproach.y, assignedEnemy, "bridge_entry");
+            if (isHard){
+              addCandidate(out, a, farApproach.x, farApproach.y, assignedEnemy, "bridge_exit_pressure");
+            }
+          } else if (enemySide === "bridge" || (assignedEnemy.target && am.intentMag > 0.10)){
+            addCandidate(out, a, myApproach.x, myApproach.y, assignedEnemy, "bridge_guard");
+            if (isHard){
+              const centerX = crossBridge.x + crossBridge.w * 0.5;
+              const centerY = crossBridge.y + crossBridge.h * 0.5;
+              addCandidate(out, a, centerX, centerY, assignedEnemy, "bridge_center");
+              if (enemySide !== "bridge"){
+                addCandidate(out, a, farApproach.x, farApproach.y, assignedEnemy, "bridge_trap");
+              }
+            }
+          }
+        }
+      }
+      if (doors){
+        const mySide = (a.x < p.cx) ? "LEFT" : "RIGHT";
+        const enemySide = (ap.x < p.cx) ? "LEFT" : "RIGHT";
+        const sideSign = (mySide === "LEFT") ? -1 : 1;
+        const entryX = p.cx + sideSign * (doors.channelW * 0.5 + a.r + 12);
+        const farX = p.cx - sideSign * (doors.channelW * 0.5 + a.r + 12);
+        const route = routeViaDoor(a, ap.x, ap.y);
+
+        addCandidate(out, a, route.x, route.y, assignedEnemy, "door_route");
+        addCandidate(out, a, entryX, doorLaneCenter.y, assignedEnemy, "door_guard");
+
+        if (isHard){
+          addCandidate(out, a, farX, doorLaneCenter.y, assignedEnemy, "door_trap");
+          if (enemySide !== mySide){
+            addCandidate(out, a, p.cx, doorLaneCenter.y, assignedEnemy, "door_center");
+          }
         }
       }
 
       if (assignedEnemy.target){
-        const lp = clamp(0.18 + lookahead * 0.42, 0.18, 0.72);
+        const lp = clamp(0.18 + lookahead * 0.42 * personality.predict, 0.18, 0.80);
         const leadX = lerp(ap.x, assignedEnemy.target.x, lp);
         const leadY = lerp(ap.y, assignedEnemy.target.y, lp);
         addCandidate(out, a, leadX, leadY, assignedEnemy, "intercept");
+        if (isHard){
+          const safeAnchor = safeAnchorFor(assignedEnemy);
+          const denyX = lerp(am.intentEnd.x, safeAnchor.x, 0.32);
+          const denyY = lerp(am.intentEnd.y, safeAnchor.y, 0.32);
+          addCandidate(out, a, denyX, denyY, assignedEnemy, "escape_deny");
+        }
       }
 
-      const flankDist = a.r * 2.8 + 16;
-      addCandidate(out, a, ap.x + perp.x * flankDist - av.x * 12, ap.y + perp.y * flankDist - av.y * 12, assignedEnemy, "flank_up");
-      addCandidate(out, a, ap.x - perp.x * flankDist - av.x * 12, ap.y - perp.y * flankDist - av.y * 12, assignedEnemy, "flank_down");
+      if (personality.name !== "aggressive"){
+        const flankDist = a.r * 2.8 + 16;
+        addCandidate(out, a, ap.x + perp.x * flankDist - av.x * 12, ap.y + perp.y * flankDist - av.y * 12, assignedEnemy, "flank_up");
+        addCandidate(out, a, ap.x - perp.x * flankDist - av.x * 12, ap.y - perp.y * flankDist - av.y * 12, assignedEnemy, "flank_down");
+      }
 
       if (role === "finisher"){
         const em = enemyMeta.get(assignedEnemy);
@@ -2900,6 +3855,14 @@ function lerp(a, b, t){ return a + (b - a) * t; }
           ap.y + em.eEdge.ny * game.maxMoveDist * 0.34,
           assignedEnemy, "finish_edge"
         );
+        if (isHard && (em.vulnerability > 0.44 || em.danger > 0.54)){
+          addCandidate(
+            out, a,
+            ap.x + em.eEdge.nx * game.maxMoveDist * 0.52 + em.intentDir.x * 12,
+            ap.y + em.eEdge.ny * game.maxMoveDist * 0.52 + em.intentDir.y * 12,
+            assignedEnemy, "kill_confirm"
+          );
+        }
       } else if (role === "disruptor"){
         if (assignedEnemy.target){
           addCandidate(
@@ -2918,6 +3881,26 @@ function lerp(a, b, t){ return a + (b - a) * t; }
           lerp(threatPred.x, ax, 0.44),
           lerp(threatPred.y, ay, 0.44),
           disruptorEnemy, "protect_lane"
+        );
+      }
+      if (personality.name === "defender" && allyAtRisk){
+        const threatPred = enemyMeta.get(disruptorEnemy).pred;
+        const coverX = lerp(threatPred.x, allyAtRisk.x, 0.68);
+        const coverY = lerp(threatPred.y, allyAtRisk.y, 0.68);
+        addCandidate(out, a, coverX, coverY, disruptorEnemy, "bodyguard");
+        const away = normalize(allyAtRisk.x - threatPred.x, allyAtRisk.y - threatPred.y);
+        addCandidate(
+          out, a,
+          allyAtRisk.x + away.x * (a.r * 2.6 + 10),
+          allyAtRisk.y + away.y * (a.r * 2.6 + 10),
+          disruptorEnemy, "bodyguard_hold"
+        );
+      } else if (personality.name === "aggressive"){
+        addCandidate(
+          out, a,
+          ap.x + av.x * (game.maxMoveDist * 0.22),
+          ap.y + av.y * (game.maxMoveDist * 0.22),
+          assignedEnemy, "pressure_finish"
         );
       }
 
@@ -2952,6 +3935,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     };
 
     const scoreCandidate = (a, cand, role, assignedEnemy) => {
+      const personality = personalityProfileFor(a);
       const moveX = cand.x - a.x;
       const moveY = cand.y - a.y;
       const moveLen = Math.hypot(moveX, moveY) || 1;
@@ -2960,27 +3944,41 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       const selfEdge = edgeInfoFor(a, cand.x, cand.y);
       const selfRisk = clamp((edgeRef - selfEdge.dist) / edgeRef, 0, 1);
       const outwardSelf = Math.max(0, (moveX * selfEdge.nx + moveY * selfEdge.ny) / Math.max(1, game.maxMoveDist));
+      const selfKOEval = estimateSelfKOCandidateChance(a, cand, moveDir, moveLen);
 
       let score = 0;
       const clutchRiskCut = 1 - knockoutClutchAggro * 0.42;
-      const selfRiskPenalty = (30 + 34 * coordStrength) * selfRisk * aiMod.riskPenaltyMul * clutchRiskCut;
-      const outwardPenalty = (20 + 28 * coordStrength) * outwardSelf * aiMod.riskPenaltyMul * clutchRiskCut;
+      const bridgeRiskMul = bridges ? 1.34 : 1;
+      const selfRiskPenalty = (30 + 34 * coordStrength) * selfRisk * aiMod.riskPenaltyMul * clutchRiskCut * bridgeRiskMul * personality.risk;
+      const outwardPenalty = (20 + 28 * coordStrength) * outwardSelf * aiMod.riskPenaltyMul * clutchRiskCut * bridgeRiskMul * personality.risk;
       score -= selfRiskPenalty;
       score -= outwardPenalty;
-      score += (role === "support" ? 13 : 8) * centerScore(a, cand.x, cand.y) * (1 - knockoutClutchAggro * 0.55);
-      score += centerScore(a, cand.x, cand.y) * aiMod.centerBias * 18;
+      score -= selfKOEval.chance * (isHard ? 108 : isNormal ? 56 : 24) * personality.risk;
+      if (selfKOEval.chance >= (isHard ? 0.34 : isNormal ? 0.46 : 0.62)){
+        score -= selfKOEval.chance * (isHard ? 88 : isNormal ? 42 : 18) * personality.risk;
+      }
+      score += (role === "support" ? 13 : 8) * centerScore(a, cand.x, cand.y) * personality.center * (1 - knockoutClutchAggro * 0.55);
+      score += centerScore(a, cand.x, cand.y) * aiMod.centerBias * 18 * personality.center;
 
+      const assignedMeta = enemyMeta.get(assignedEnemy);
       const assignedPred = enemyMeta.get(assignedEnemy).pred;
       const assignedDist = Math.hypot(cand.x - assignedPred.x, cand.y - assignedPred.y);
       score += clamp(1 - assignedDist / (game.maxMoveDist * 1.05), 0, 1) *
-        (role === "finisher" ? 20 : role === "disruptor" ? 16 : 11);
-      if (isHard){
+        (role === "finisher" ? 20 * personality.attack : role === "disruptor" ? 16 * personality.predict : 11 * personality.protect);
+      const commitFloor = commitFloorFor(a, cand.tag, cand.focusEnemy);
+      if (commitFloor > 0){
+        const commitFrac = clamp(moveLen / Math.max(1, game.maxMoveDist), 0, 1);
+        const shortfall = clamp((commitFloor - commitFrac) / Math.max(0.08, commitFloor), 0, 1);
+        score -= shortfall * (isHard ? 22 : isNormal ? 12 : 0) * personality.pressure;
+        score += Math.max(0, commitFrac - commitFloor) * (isHard ? 16 : isNormal ? 8 : 0) * personality.pressure;
+      }
+      if (isHard || personality.laneBlock > 1.08){
         const am = enemyMeta.get(assignedEnemy);
         if (assignedEnemy.target && am.intentMag > 0.08){
           const lane = pointSegData(assignedEnemy.x, assignedEnemy.y, assignedEnemy.target.x, assignedEnemy.target.y, cand.x, cand.y);
           const laneR = a.r + assignedEnemy.r + 20;
           const laneBlock = clamp(1 - Math.sqrt(lane.d2) / laneR, 0, 1);
-          score += laneBlock * (12 + 18 * diff.intercept);
+          score += laneBlock * (12 + 18 * diff.intercept) * personality.laneBlock;
         }
       }
       // Discourage hard reversals; prefer engage or sidestep unless safety is critical.
@@ -2993,44 +3991,146 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       }
       if (isHard){
         if (cand.tag === "finish_edge") score += 12;
-        else if (cand.tag === "direct_far") score += 9;
-        else if (cand.tag === "intercept") score += 7;
-        else if (cand.tag === "direct_mid") score += 5;
+        else if (cand.tag === "kill_confirm") score += 20;
+        else if (cand.tag === "direct_far") score += 15;
+        else if (cand.tag === "intercept") score += 12;
+        else if (cand.tag === "escape_deny") score += 14;
+        else if (cand.tag === "direct_mid") score += 8;
+        else if (cand.tag === "counter_lane") score += 10;
+        else if (cand.tag === "all_in_predict") score += 18;
         else if (cand.tag === "center_hold") score -= 8;
+      }
+      if (personality.name === "aggressive"){
+        if (cand.tag === "all_in_predict") score += 34;
+        if (cand.tag === "direct_far" || cand.tag === "finish_edge" || cand.tag === "kill_confirm" || cand.tag === "pressure_finish") score += 22;
+        if (cand.tag === "intercept") score += 16;
+        if (cand.tag === "direct_mid" || cand.tag === "counter_lane") score += 12;
+        if (cand.tag === "counter_shoulder" || cand.tag === "center_hold") score -= 16;
+        if (cand.tag === "protect_lane" || cand.tag === "bodyguard" || cand.tag === "bodyguard_hold") score -= 24;
+      } else if (personality.name === "defender"){
+        if (cand.tag === "protect_lane" || cand.tag === "bodyguard" || cand.tag === "bodyguard_hold") score += 18;
+        if (cand.tag === "door_guard" || cand.tag === "bridge_guard") score += 16;
+        if (cand.tag === "center_hold") score += 4;
+      } else if (personality.name === "predictor"){
+        if (cand.tag === "intercept" || cand.tag === "counter_lane" || cand.tag === "counter_shoulder" || cand.tag === "predict_cut") score += 18;
+        if (cand.tag === "escape_deny") score += 16;
+        if (cand.tag === "door_route" || cand.tag === "bridge_trap") score += 12;
+      } else if (personality.name === "balanced"){
+        if (cand.tag === "flank_up" || cand.tag === "flank_down" || cand.tag === "lane_cut") score += 8;
+      }
+      if (isHard && cand.tag === "escape_deny" && assignedEnemy.target){
+        const safeAnchor = safeAnchorFor(assignedEnemy);
+        const lane = pointSegData(assignedMeta.intentEnd.x, assignedMeta.intentEnd.y, safeAnchor.x, safeAnchor.y, cand.x, cand.y);
+        const denyR = a.r + assignedEnemy.r + 18;
+        score += clamp(1 - Math.sqrt(lane.d2) / denyR, 0, 1) * 22;
+      }
+      if (bridges){
+        const candSide = bridgeSideFor(cand.x);
+        const enemySide = assignedMeta.bridgeSide;
+        const controlBridge = assignedMeta.targetBridge || bridgeChoiceFor(cand.y, assignedPred.y);
+        if (controlBridge){
+          const bridgeCY = controlBridge.y + controlBridge.h * 0.5;
+          const bridgeBand = Math.abs(cand.y - bridgeCY);
+          const bridgeProx = clamp(1 - bridgeBand / Math.max(40, controlBridge.h * 0.9), 0, 1);
+          const mouthDist = Math.min(
+            Math.hypot(cand.x - controlBridge.x, cand.y - bridgeCY),
+            Math.hypot(cand.x - (controlBridge.x + controlBridge.w), cand.y - bridgeCY)
+          );
+          const mouthProx = clamp(1 - mouthDist / Math.max(40, game.maxMoveDist * 0.34), 0, 1);
+
+          if (enemySide === "bridge"){
+            score += mouthProx * (role === "finisher" ? 34 : 24);
+            if (cand.tag === "bridge_guard" || cand.tag === "bridge_trap" || cand.tag === "bridge_center"){
+              score += 18 + bridgeProx * 16;
+            }
+          } else if (candSide !== enemySide && candSide !== "bridge"){
+            score += mouthProx * (role === "support" ? 10 : 16);
+          }
+          if (cand.tag === "bridge_cross"){
+            const routeBonus = (bridgeSideFor(a.x) !== enemySide) ? 26 : 10;
+            score += (routeBonus + bridgeProx * 10) * personality.pressure;
+          } else if (cand.tag === "bridge_entry"){
+            score += (14 + mouthProx * 12) * personality.guard;
+          } else if (cand.tag === "bridge_exit_pressure"){
+            score += isHard ? 18 + mouthProx * 14 : 0;
+          } else if (cand.tag === "bridge_trap"){
+            score += isHard ? (28 + mouthProx * 16 + bridgeProx * 14) * personality.predict : 0;
+          } else if (cand.tag === "bridge_guard"){
+            score += (16 + bridgeProx * 12) * personality.guard;
+          } else if (cand.tag === "bridge_center"){
+            score += isHard ? 14 + bridgeProx * 10 : 0;
+          }
+        }
+        if (candSide === "bridge"){
+          const activeBridge = controlBridge || bridgeChoiceFor(cand.y, cand.y);
+          if (activeBridge){
+            const railDist = Math.min(cand.y - activeBridge.y, activeBridge.y + activeBridge.h - cand.y);
+            const railRisk = clamp(1 - railDist / Math.max(16, activeBridge.h * 0.28), 0, 1);
+            score -= railRisk * (isHard ? 34 : 22);
+          }
+          if (cand.tag === "bridge_center") score -= 10;
+        }
+      }
+      if (doors){
+        const laneBand = Math.abs(cand.y - doorLaneCenter.y);
+        const laneProx = clamp(1 - laneBand / Math.max(48, p.h * 0.18), 0, 1);
+        const targetNeedsLane = assignedMeta.intentDoorHalf !== projectedDoorHalf;
+        if (cand.tag === "door_route"){
+          score += (22 + laneProx * 12) * Math.max(personality.predict, 1);
+        } else if (cand.tag === "door_guard"){
+          score += (18 + laneProx * 16) * personality.guard;
+        } else if (cand.tag === "door_trap"){
+          score += isHard ? (28 + laneProx * 18) * personality.predict : 0;
+        } else if (cand.tag === "door_center"){
+          score += isHard ? 16 + laneProx * 10 : 0;
+        }
+        if (targetNeedsLane){
+          score += laneProx * (isHard ? 24 : 10);
+        }
+        if (Math.abs(cand.x - p.cx) < doors.channelW * 0.85 && Math.abs(cand.y - doorLaneCenter.y) > doors.topOpen.h * 0.46){
+          score -= 26;
+        }
       }
 
       let maxKOPotential = 0;
+      let maxKOChance = 0;
       for (const opp of livingOpp){
         const meta = enemyMeta.get(opp);
-        const pred = meta.pred;
-        const hit = pointSegData(a.x, a.y, cand.x, cand.y, pred.x, pred.y);
-        const hitR = a.r + opp.r + 9 + diff.intercept * 7;
-        if (hit.d2 > hitR * hitR) continue;
-
-        const toEnemy = normalize(pred.x - a.x, pred.y - a.y);
-        const pushDir = normalize(moveDir.x * 0.72 + toEnemy.x * 0.28, moveDir.y * 0.72 + toEnemy.y * 0.28);
-        const pushAmt = 10 + moveLen * 0.36;
-        const eFuture = clampPointToPlatformForUnit(opp, pred.x + pushDir.x * pushAmt, pred.y + pushDir.y * pushAmt);
-        const eRawFuture = edgeInfoFor(opp, pred.x + pushDir.x * pushAmt, pred.y + pushDir.y * pushAmt);
-        const eNowEdge = meta.eEdge;
-        const eFutureEdge = edgeInfoFor(opp, eFuture.x, eFuture.y);
-        const towardOut = Math.max(0, pushDir.x * eNowEdge.nx + pushDir.y * eNowEdge.ny);
-        const edgeSwing = clamp((eNowEdge.dist - eFutureEdge.dist) / Math.max(8, edgeRef * 0.70), -1, 1);
-        const koPotential = clamp((-eRawFuture.dist + 4) / Math.max(8, opp.r + 8), 0, 1);
+        const koEval = estimateKOCandidateChance(a, cand, opp, meta, moveDir, moveLen);
+        if (koEval.chance <= 0) continue;
+        const towardOut = koEval.towardOut;
+        const edgeSwing = koEval.edgeSwing;
+        const koPotential = koEval.koPotential;
+        const koChance = koEval.chance;
         maxKOPotential = Math.max(maxKOPotential, koPotential);
+        maxKOChance = Math.max(maxKOChance, koChance);
 
         let hitScore = 14 + towardOut * 46 + edgeSwing * 34 + meta.vulnerability * 28;
-        hitScore += koPotential * (isHard ? 155 : isNormal ? 82 : 48);
+        hitScore += koPotential * (isHard ? 205 : isNormal ? 82 : 48);
+        hitScore += koChance * (isHard ? 88 : isNormal ? 42 : 18);
         hitScore += knockoutClutchAggro * (22 + 28 * koPotential + 10 * towardOut);
         if (opp === finisherEnemy) hitScore += 12;
         if (role === "disruptor" && opp === disruptorEnemy) hitScore += 10;
         if (meta.vulnerability > 0.58) hitScore += 9 * meta.vulnerability;
-        score += hitScore * aiMod.koCommitMul;
+        score += hitScore * aiMod.koCommitMul * personality.attack;
+      }
+
+      const highKOThreshold = isHard ? 0.42 : isNormal ? 0.58 : 0.76;
+      if (maxKOChance >= highKOThreshold){
+        score += (isHard ? 86 : isNormal ? 42 : 16) * maxKOChance * personality.finish;
+      }
+      const koAdvantage = maxKOChance - selfKOEval.chance;
+      if (isHard){
+        score += Math.max(0, koAdvantage) * 78 * personality.finish;
+        score -= Math.max(0, -koAdvantage) * 36 * personality.risk;
+      } else if (isNormal){
+        score += Math.max(0, koAdvantage) * 28 * personality.finish;
       }
 
       // Allow calculated risk-taking when a probable killshot exists.
       const riskOverride = clamp(
-        maxKOPotential * ((isHard ? 0.98 : isNormal ? 0.58 : 0.26) + knockoutClutchAggro * 0.32),
+        Math.max(maxKOPotential, maxKOChance * (isHard ? 1.0 : 0.82)) *
+          ((isHard ? 0.98 : isNormal ? 0.58 : 0.26) + knockoutClutchAggro * 0.32),
         0, 0.95
       );
       score += (selfRiskPenalty + outwardPenalty) * riskOverride;
@@ -3039,7 +4139,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         const threat = enemyMeta.get(disruptorEnemy).pred;
         const lane = pointSegData(threat.x, threat.y, allyAtRisk.x, allyAtRisk.y, cand.x, cand.y);
         const laneR = a.r + 26;
-        score += clamp(1 - Math.sqrt(lane.d2) / laneR, 0, 1) * (9 + 24 * coordStrength);
+        score += clamp(1 - Math.sqrt(lane.d2) / laneR, 0, 1) * (9 + 24 * coordStrength) * personality.protect;
       }
       if (isHard){
         // Penalize ending inside obvious incoming enemy lines unless we are actively engaging.
@@ -3068,8 +4168,14 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       if (cand.focusEnemy){
         const cid = enemyIds.get(cand.focusEnemy);
         const claims = enemyClaims.get(cid) || 0;
-        score -= claims * (coordStrength < 0.24 ? 4 : (8 + 26 * spacingStrength));
+        score -= claims * (coordStrength < 0.24 ? 4 : (8 + 26 * spacingStrength)) * personality.claim;
       }
+      if (personality.name === "aggressive"){
+        score += Math.max(0, engageDot) * 20;
+      }
+
+      cand.koChance = maxKOChance;
+      cand.riskChance = selfKOEval.chance;
 
       const noise = (8 + diff.aimJitter * 0.12) * randomness;
       score += rand(-noise, noise);
@@ -3077,6 +4183,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     };
 
     const unitPotential = (a) => {
+      const personality = personalityProfileFor(a);
       let best = -1e9;
       for (const opp of livingOpp){
         const meta = enemyMeta.get(opp);
@@ -3085,18 +4192,21 @@ function lerp(a, b, t){ return a + (b - a) * t; }
           (1 - clamp(d / (game.maxMoveDist * 1.7), 0, 1)) * 26;
         if (roleFor.get(a) === "finisher" && opp === finisherEnemy) s += 18;
         if (roleFor.get(a) === "disruptor" && opp === disruptorEnemy) s += 14;
+        s *= (roleFor.get(a) === "support") ? personality.protect : personality.attack;
         if (s > best) best = s;
       }
       const selfEdge = edgeInfoFor(a, a.x, a.y);
       if (selfEdge.dist < edgeRef * 0.55) best += 6;
+      if (personality.name === "defender" && allyAtRisk && a === allyAtRisk) best += 8;
       return best;
     };
 
-    const refineCount = isHard ? 11 : isNormal ? 3 : 0;
-    const refineRadius = isHard ? 38 : 22;
+      const refineCount = isHard ? 15 : isNormal ? 3 : 0;
+      const refineRadius = isHard ? 44 : 22;
     const aiOrder = [...livingAI].sort((a, b) => unitPotential(b) - unitPotential(a));
     for (const a of aiOrder){
       const role = roleFor.get(a) || "hunter";
+      const personality = personalityProfileFor(a);
       const assignedEnemy = pickAssignedEnemy(a, role);
       const candidates = buildCandidates(a, role, assignedEnemy);
 
@@ -3111,8 +4221,9 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       }
 
       // Local refinement for stronger levels: search around best candidate.
-      if (chosen && refineCount > 0){
-        for (let i = 0; i < refineCount; i++){
+      const localRefineCount = Math.max(0, refineCount + personality.refine);
+      if (chosen && localRefineCount > 0){
+        for (let i = 0; i < localRefineCount; i++){
           const rx = chosen.x + rand(-refineRadius, refineRadius);
           const ry = chosen.y + rand(-refineRadius, refineRadius);
           let safe = clampPointToPlatformForUnit(a, rx, ry);
@@ -3134,6 +4245,9 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       }
 
       a.target = { x: chosen.x, y: chosen.y };
+      a.aiDecisionTag = chosen.tag || "fallback";
+      a.aiKOChance = Number.isFinite(chosen.koChance) ? chosen.koChance : 0;
+      a.aiRiskChance = Number.isFinite(chosen.riskChance) ? chosen.riskChance : 0;
       reservedSpots.push({ x: chosen.x, y: chosen.y });
       if (chosen.focusEnemy){
         const id = enemyIds.get(chosen.focusEnemy);
@@ -3195,6 +4309,9 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const p2SeriesWon = game.aiWins >= meta.firstTo;
     game.seriesOver = p1SeriesWon || p2SeriesWon;
     game.seriesWinner = game.seriesOver ? (p1SeriesWon ? "player" : "ai") : null;
+    recordMapUnlockProgress();
+    maybeUnlockBridgesStage();
+    maybeUnlockDoorsStage();
 
     winSound();
 
@@ -3400,16 +4517,15 @@ function lerp(a, b, t){ return a + (b - a) * t; }
 
   function getSetupLayout(){
     const panelW = Math.min(760, Math.floor(W * 0.90));
-    const panelH = clamp(Math.floor(H * 0.60), 430, 610);
+    const panelH = clamp(Math.floor(H * 0.72), 720, Math.max(720, H - 110));
     const px = Math.floor(W/2 - panelW/2);
-    const py = Math.floor(clamp(H * 0.22, 90, Math.max(90, H - panelH - 54)));
+    const py = Math.floor(clamp(H * 0.19, 96, Math.max(96, H - panelH - 36)));
     const pad = 22;
-    // Status cards were removed, so keep only a small top buffer.
     const headerH = 44;
     const footerH = 108;
     const viewX = px + pad;
     const viewY = py + headerH;
-    const viewW = panelW - pad*2 - 10; // keep room for scrollbar gutter
+    const viewW = panelW - pad*2 - 10;
     const viewH = panelH - headerH - footerH;
     return { panelW, panelH, px, py, pad, viewX, viewY, viewW, viewH };
   }
@@ -3459,6 +4575,8 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   function buildSetupUI(){
     ui.buttons = [];
     setupSectionHeaders = [];
+    if (!mapUnlocks.bridges && config.stage === "BRIDGES") config.stage = "CLASSIC";
+    if (!mapUnlocks.doors && config.stage === "DOORS") config.stage = "CLASSIC";
     const { panelW, panelH, px, py, pad, viewX, viewY, viewW, viewH } = getSetupLayout();
 
     let y = viewY - setupScrollY;
@@ -3484,7 +4602,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       { id:"players_1p", label:"ONE PLAYER", onClick:()=>{ config.players=1; buildSetupUI(); beep(600,0.03,"square",0.03); }, enabled:true, selected:(config.players===1) },
       { id:"players_2p", label:"TWO PLAYER", onClick:()=>{ config.players=2; buildSetupUI(); beep(600,0.03,"square",0.03); }, enabled:true, selected:(config.players===2) }
     ], 2);
-    y += 16; // extra breathing room before mode controls
+    y += 16;
 
     // GAME TYPE
     section("MODE");
@@ -3510,9 +4628,13 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     row([
       { id:"stage_classic", label:"CLASSIC", onClick:()=>{ config.stage="CLASSIC"; buildSetupUI(); beep(470,0.03,"square",0.03); }, enabled:stageEnabled, selected:(stageEnabled && config.stage==="CLASSIC") },
       { id:"stage_bumper3", label:"BUMPERS", onClick:()=>{ config.stage="BUMPER3"; buildSetupUI(); beep(470,0.03,"square",0.03); }, enabled:stageEnabled, selected:(stageEnabled && config.stage==="BUMPER3") },
-      { id:"stage_walls", label:"WALLS", onClick:()=>{ config.stage="WALLS"; buildSetupUI(); beep(470,0.03,"square",0.03); }, enabled:stageEnabled, selected:(stageEnabled && config.stage==="WALLS") },
-      { id:"stage_circle", label:"CIRCLE", onClick:()=>{ config.stage="CIRCLE"; buildSetupUI(); beep(470,0.03,"square",0.03); }, enabled:stageEnabled, selected:(stageEnabled && config.stage==="CIRCLE") }
-    ], 4);
+      { id:"stage_walls", label:"WALLS", onClick:()=>{ config.stage="WALLS"; buildSetupUI(); beep(470,0.03,"square",0.03); }, enabled:stageEnabled, selected:(stageEnabled && config.stage==="WALLS") }
+    ], 3);
+    row([
+      { id:"stage_circle", label:"CIRCLE", onClick:()=>{ config.stage="CIRCLE"; buildSetupUI(); beep(470,0.03,"square",0.03); }, enabled:stageEnabled, selected:(stageEnabled && config.stage==="CIRCLE") },
+      { id:"stage_bridges", label:"BRIDGES", onClick:()=>{ if (!mapUnlocks.bridges) return; config.stage="BRIDGES"; buildSetupUI(); beep(470,0.03,"square",0.03); }, enabled:(stageEnabled && mapUnlocks.bridges), selected:(stageEnabled && config.stage==="BRIDGES") },
+      { id:"stage_doors", label:"DOORS", onClick:()=>{ if (!mapUnlocks.doors) return; config.stage="DOORS"; buildSetupUI(); beep(470,0.03,"square",0.03); }, enabled:(stageEnabled && mapUnlocks.doors), selected:(stageEnabled && config.stage==="DOORS") }
+    ], 3);
 
     y += 4;
     section("MODIFIERS");
@@ -3545,13 +4667,14 @@ function lerp(a, b, t){ return a + (b - a) * t; }
 
     // BACK / BEGIN (responsive width, no overlap on narrow viewports)
     const footerGap = 14;
-    const bw2 = Math.floor((viewW - footerGap) / 2);
-    const bh2 = 56;
-    const bx1 = viewX;
-    const bx2 = viewX + bw2 + footerGap;
+    const footerW = Math.min(viewW, 720);
+    const footerX = Math.floor(viewX + (viewW - footerW) * 0.5);
+    const bw2 = Math.floor((footerW - footerGap) / 2);
+    const bh2 = 58;
+    const bx1 = footerX;
     const by = py + panelH - bh2 - 22;
     addButton("setup_back", bx1, by, bw2, bh2, "BACK", () => { state = State.MENU; buildMenuUI(); beep(300,0.04,"square",0.03); });
-    addButton("setup_begin", bx2, by, bw2, bh2, "BEGIN", () => { startNewGame({ players: config.players, mode: config.mode, difficulty: config.difficulty, stage: config.stage, series: config.series, speed: config.speed, modifier: config.modifier }); beep(740,0.05,"triangle",0.04); });
+    addButton("setup_begin", bx1 + bw2 + footerGap, by, bw2, bh2, "BEGIN", () => { startNewGame({ players: config.players, mode: config.mode, difficulty: config.difficulty, stage: config.stage, series: config.series, speed: config.speed, modifier: config.modifier }); beep(740,0.05,"triangle",0.04); });
   }
 
   function buildSettingsUI(){
@@ -3660,8 +4783,70 @@ function buildPauseUI(){
   }
 
   // ============================================================
-  // Settings toggle rows
+  // Settings controls
   // ============================================================
+  function drawVolumeSliderRow(x, y, label, value, rowW=340){
+    ctx.save();
+    ctx.font = "16px ui-monospace, Menlo, Consolas, monospace";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = COL_TEXT;
+
+    const labelY = y - 14;
+    const trackW = Math.min(240, rowW - 116);
+    const trackH = 10;
+    const trackX = x + Math.max(0, (rowW - trackW) * 0.5);
+    const trackY = y + 8;
+    const knobX = trackX + trackW * clamp(value, 0, 1);
+    const pct = Math.round(clamp(value, 0, 1) * 100);
+
+    ctx.fillText(label, trackX, labelY);
+    ctx.textAlign = "right";
+    ctx.font = "13px ui-monospace, Menlo, Consolas, monospace";
+    ctx.fillStyle = pct > 0 ? "rgba(0,255,152,0.92)" : "rgba(180,205,194,0.72)";
+    ctx.fillText(`${pct}%`, trackX + trackW, labelY);
+
+    roundRect(ctx, trackX, trackY, trackW, trackH, 999);
+    ctx.fillStyle = "rgba(0,0,0,0.42)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,228,102,0.34)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    const fillW = Math.max(0, knobX - trackX);
+    if (fillW > 0){
+      ctx.save();
+      roundRect(ctx, trackX, trackY, fillW, trackH, 999);
+      const grad = ctx.createLinearGradient(trackX, trackY, trackX + trackW, trackY);
+      grad.addColorStop(0, "rgba(0,228,102,0.38)");
+      grad.addColorStop(0.55, "rgba(0,255,152,0.78)");
+      grad.addColorStop(1, "rgba(155,255,214,0.95)");
+      ctx.fillStyle = grad;
+      ctx.shadowColor = "rgba(0,228,102,0.55)";
+      ctx.shadowBlur = 10;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.beginPath();
+    ctx.fillStyle = "rgba(220,255,242,0.95)";
+    ctx.shadowColor = "rgba(0,228,102,0.82)";
+    ctx.shadowBlur = 14;
+    ctx.arc(knobX, trackY + trackH * 0.5, 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+    return {
+      x: trackX - 8,
+      y: labelY - 12,
+      w: trackW + 16,
+      h: 46,
+      trackX,
+      trackY,
+      trackW,
+      trackH
+    };
+  }
   function drawToggleRow(x, y, label, value, rowW=340){
     ctx.save();
     ctx.font = "16px ui-monospace, Menlo, Consolas, monospace";
@@ -3827,6 +5012,7 @@ function updateGameplay(dt){
         revealActive = false;
         if (revealPending){
           revealPending = false;
+          if (isDoorsStage()) applyDoorsStageForResolve();
           beginResolve();
         }
       }
@@ -3906,7 +5092,7 @@ function updateGameplay(dt){
       for (const u of game.team2){
         if (!u.alive || !u.target) continue;
         if (isFootballMode() || isHockeyMode()){
-          const safe = clampPointToPlatformForUnit(u, u.target.x, u.target.y);
+          const safe = findAIMoveTarget(u, u.target.x, u.target.y);
           u.target.x = safe.x;
           u.target.y = safe.y;
         } else {
@@ -3928,7 +5114,7 @@ if (game.phase === "resolve"){
       // Integrate (sub-stepped when walls exist to prevent tunneling)
       for (const u of all){
         if (!u.alive) continue;
-        if (config.stage === "WALLS" && game.walls && game.walls.length){
+        if (game.walls && game.walls.length){
           stepUnitWithWalls(u, dt * 60 * simMul);
         } else {
           u.x += u.vx * dt * 60 * simMul;
@@ -3942,12 +5128,16 @@ if (game.phase === "resolve"){
 
 // Collisions
       let intensity = 0;
+      let bumperIntensity = 0;
+      let bodyIntensity = 0;
       if (game.bumpers && game.bumpers.length){
         for (let it=0; it<2 * simMul; it++){
           for (const u of all){
             if (!u.alive) continue;
             for (const b of game.bumpers){
-              intensity = Math.max(intensity, resolveCircleCollisionStatic(u, b));
+              const hit = resolveCircleCollisionStatic(u, b);
+              bumperIntensity = Math.max(bumperIntensity, hit);
+              intensity = Math.max(intensity, hit);
             }
           }
         }
@@ -3959,13 +5149,20 @@ for (let i = 0; i < all.length; i++){
         for (let j = i + 1; j < all.length; j++){
           const b = all[j];
           if (!b.alive) continue;
-          intensity = Math.max(intensity, resolveCircleCollision(a, b));
+          const hit = resolveCircleCollision(a, b);
+          bodyIntensity = Math.max(bodyIntensity, hit);
+          intensity = Math.max(intensity, hit);
         }
       }
 }
 
-      if (intensity > 0){
-        impactSound(clamp(intensity, 0, 1));
+      if (bumperIntensity > 0.08){
+        bumperHitSound(bumperIntensity);
+      }
+      if (bodyIntensity > 0){
+        const hitStrength = clamp(bodyIntensity, 0, 1);
+        if (hitStrength >= 0.74) heavyKnockoutSmash(hitStrength);
+        else impactSound(hitStrength);
       }
 
       if (isFootballMode()){
@@ -3978,12 +5175,14 @@ for (let i = 0; i < all.length; i++){
         }
         // Eliminations
         const keepAwayCarrier = isKeepAwayMode() ? getFootballCarrierUnit() : null;
+        let eliminatedCount = 0;
         for (const u of all){
           if (!u.alive) continue;
           if (!isOnPlatform(u)){
             u.alive = false;
             u.vx = u.vy = 0;
             u.target = null;
+            eliminatedCount++;
             if (isKeepAwayMode() && keepAwayCarrier === u){
               // If the carrier is knocked off, drop/reset ball to center.
               setFootballCarrier(null);
@@ -3993,9 +5192,9 @@ for (let i = 0; i < all.length; i++){
               game.keepAway.streakTeam = 0;
               game.keepAway.streakCount = 0;
             }
-            beep(220, 0.06, "sawtooth", 0.03);
           }
         }
+        if (eliminatedCount > 0) fallOutSound(eliminatedCount);
 
         // Win condition
         const t1 = aliveCount(game.team1);
@@ -4116,7 +5315,183 @@ for (let i = 0; i < all.length; i++){
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    if (isCurlingMode()){
+    if (isBridgesStage()){
+      const rr = 18;
+      const b = getBridgesStageData(plat);
+      ctx.save();
+      roundRect(ctx, plat.x, plat.y, plat.w, plat.h, rr);
+      ctx.clip();
+
+      // Split-floor layout with a lethal center trench.
+      ctx.fillStyle = "rgba(0,228,102,0.06)";
+      ctx.fillRect(b.left.x, b.left.y, b.left.w, b.left.h);
+      ctx.fillRect(b.right.x, b.right.y, b.right.w, b.right.h);
+
+      // Deep trench core.
+      ctx.fillStyle = "rgba(0,0,0,0.985)";
+      ctx.fillRect(b.pitX, b.pitY, b.pitW, b.pitH);
+
+      // Hard trench lips with the same deep neon rim language as the arena border.
+      const lipW = Math.max(12, Math.floor(b.pitW * 0.17));
+      const leftLip = ctx.createLinearGradient(b.pitX - lipW, 0, b.pitX + 2, 0);
+      leftLip.addColorStop(0, "rgba(0,228,102,0.04)");
+      leftLip.addColorStop(0.55, "rgba(82,122,104,0.42)");
+      leftLip.addColorStop(1, "rgba(10,18,16,0.92)");
+      ctx.fillStyle = leftLip;
+      ctx.fillRect(b.pitX - lipW, b.pitY, lipW, b.pitH);
+
+      const rightLip = ctx.createLinearGradient(b.pitX + b.pitW - 2, 0, b.pitX + b.pitW + lipW, 0);
+      rightLip.addColorStop(0, "rgba(10,18,16,0.92)");
+      rightLip.addColorStop(0.45, "rgba(82,122,104,0.42)");
+      rightLip.addColorStop(1, "rgba(0,228,102,0.04)");
+      ctx.fillStyle = rightLip;
+      ctx.fillRect(b.pitX + b.pitW, b.pitY, lipW, b.pitH);
+
+      ctx.strokeStyle = COL_NEON;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = COL_NEON;
+      ctx.shadowBlur = 26;
+      ctx.beginPath();
+      ctx.moveTo(b.pitX, b.pitY);
+      ctx.lineTo(b.pitX, b.pitY + b.pitH);
+      ctx.moveTo(b.pitX + b.pitW, b.pitY);
+      ctx.lineTo(b.pitX + b.pitW, b.pitY + b.pitH);
+      ctx.stroke();
+
+      ctx.strokeStyle = "rgba(0,228,102,0.30)";
+      ctx.lineWidth = 7;
+      ctx.shadowColor = "rgba(0,228,102,0.90)";
+      ctx.shadowBlur = 22;
+      ctx.beginPath();
+      ctx.moveTo(b.pitX, b.pitY);
+      ctx.lineTo(b.pitX, b.pitY + b.pitH);
+      ctx.moveTo(b.pitX + b.pitW, b.pitY);
+      ctx.lineTo(b.pitX + b.pitW, b.pitY + b.pitH);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      ctx.strokeStyle = "rgba(0,228,102,0.10)";
+      ctx.lineWidth = 1;
+      for (let y = b.pitY + 20; y <= b.pitY + b.pitH - 20; y += 30){
+        ctx.beginPath();
+        ctx.moveTo(b.pitX + 6, y);
+        ctx.lineTo(b.pitX + b.pitW - 6, y);
+        ctx.stroke();
+      }
+
+      for (const bridge of b.bridges){
+        // Dark catwalk bridge with neon rails instead of pale slabs.
+        const bridgeFill = ctx.createLinearGradient(bridge.x, bridge.y, bridge.x, bridge.y + bridge.h);
+        bridgeFill.addColorStop(0, "rgba(48,70,62,0.96)");
+        bridgeFill.addColorStop(0.10, "rgba(24,34,30,0.98)");
+        bridgeFill.addColorStop(0.50, "rgba(14,20,18,0.99)");
+        bridgeFill.addColorStop(0.90, "rgba(24,34,30,0.98)");
+        bridgeFill.addColorStop(1, "rgba(48,70,62,0.96)");
+        ctx.fillStyle = bridgeFill;
+        ctx.strokeStyle = "rgba(186,255,224,0.38)";
+        ctx.lineWidth = 1.8;
+        roundRect(ctx, bridge.x, bridge.y, bridge.w, bridge.h, 12);
+        ctx.fill();
+        ctx.stroke();
+
+        // Outer rails.
+        ctx.strokeStyle = "rgba(0,228,102,0.55)";
+        ctx.lineWidth = 2.1;
+        ctx.beginPath();
+        ctx.moveTo(bridge.x + 10, bridge.y + 7);
+        ctx.lineTo(bridge.x + bridge.w - 10, bridge.y + 7);
+        ctx.moveTo(bridge.x + 10, bridge.y + bridge.h - 7);
+        ctx.lineTo(bridge.x + bridge.w - 10, bridge.y + bridge.h - 7);
+        ctx.stroke();
+
+        // Deck seams.
+        ctx.strokeStyle = "rgba(214,255,238,0.14)";
+        ctx.lineWidth = 1;
+        const panelStep = Math.max(14, Math.floor(bridge.w / 5));
+        for (let x = bridge.x + panelStep; x < bridge.x + bridge.w; x += panelStep){
+          ctx.beginPath();
+          ctx.moveTo(x, bridge.y + 11);
+          ctx.lineTo(x, bridge.y + bridge.h - 11);
+          ctx.stroke();
+        }
+
+        // Thin center guide for the bridge lane.
+        ctx.strokeStyle = "rgba(0,228,102,0.24)";
+        ctx.lineWidth = 1.1;
+        ctx.beginPath();
+        ctx.moveTo(bridge.x + 14, bridge.y + bridge.h * 0.5);
+        ctx.lineTo(bridge.x + bridge.w - 14, bridge.y + bridge.h * 0.5);
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = "rgba(0,228,102,0.16)";
+      ctx.lineWidth = 1;
+      for (let y = plat.y + 18; y <= plat.y + plat.h - 18; y += 36){
+        ctx.beginPath();
+        ctx.moveTo(plat.x + 12, y);
+        ctx.lineTo(b.pitX - 8, y);
+        ctx.moveTo(b.pitX + b.pitW + 8, y);
+        ctx.lineTo(plat.x + plat.w - 12, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (isDoorsStage()){
+      const d = getDoorsStageData(plat);
+      const openHalf = game.doors.openHalf;
+      const closedDoor = openHalf === "TOP" ? d.botDoor : d.topDoor;
+      ctx.save();
+      roundRect(ctx, plat.x, plat.y, plat.w, plat.h, 18);
+      ctx.clip();
+
+      // Match the normal classic map: just draw the standard arena grid.
+      ctx.globalAlpha = 0.11;
+      ctx.strokeStyle = COL_NEON;
+      ctx.lineWidth = 1;
+      const step = 34;
+      for (let y = plat.y + 16; y <= plat.y + plat.h - 16; y += step){
+        ctx.beginPath();
+        ctx.moveTo(plat.x, y);
+        ctx.lineTo(plat.x + plat.w, y);
+        ctx.stroke();
+      }
+      for (let x = plat.x + 16; x <= plat.x + plat.w - 16; x += step){
+        ctx.beginPath();
+        ctx.moveTo(x, plat.y);
+        ctx.lineTo(x, plat.y + plat.h);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
+      const doorFill = ctx.createLinearGradient(closedDoor.x, closedDoor.y, closedDoor.x, closedDoor.y + closedDoor.h);
+      doorFill.addColorStop(0, "rgba(40,64,56,0.96)");
+      doorFill.addColorStop(0.14, "rgba(18,28,24,0.98)");
+      doorFill.addColorStop(0.50, "rgba(8,14,12,0.995)");
+      doorFill.addColorStop(0.86, "rgba(18,28,24,0.98)");
+      doorFill.addColorStop(1, "rgba(40,64,56,0.96)");
+      ctx.fillStyle = doorFill;
+      roundRect(ctx, closedDoor.x, closedDoor.y, closedDoor.w, closedDoor.h, 4);
+      ctx.fill();
+
+      ctx.strokeStyle = "rgba(0,228,102,0.82)";
+      ctx.lineWidth = 2.2;
+      ctx.shadowColor = "rgba(0,228,102,0.82)";
+      ctx.shadowBlur = 14;
+      roundRect(ctx, closedDoor.x, closedDoor.y, closedDoor.w, closedDoor.h, 4);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      ctx.strokeStyle = "rgba(0,228,102,0.20)";
+      ctx.lineWidth = 1;
+      const seamStep = Math.max(18, Math.floor(closedDoor.h / 5));
+      for (let y = closedDoor.y + seamStep; y < closedDoor.y + closedDoor.h; y += seamStep){
+        ctx.beginPath();
+        ctx.moveTo(closedDoor.x + 8, y);
+        ctx.lineTo(closedDoor.x + closedDoor.w - 8, y);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    } else if (isCurlingMode()){
       const c = game.curling;
       const rr = 18;
       ctx.save();
@@ -4355,6 +5730,80 @@ for (let i = 0; i < all.length; i++){
     ctx.stroke();
 
     ctx.restore();
+
+    if (settings.devMode && isSinglePlayerMode() && u.team === 2 && u.aiPersonality){
+      const labelMap = {
+        AGGRESSIVE: "AGGRO",
+        DEFENDER: "DEFEND",
+        PREDICTOR: "PREDICT",
+        BALANCED: "BALANCE"
+      };
+      const label = labelMap[u.aiPersonality] || String(u.aiPersonality);
+      const tagMap = {
+        all_in_predict: "ALL-IN",
+        direct_far: "CHASE",
+        direct_mid: "PRESS",
+        finish_edge: "FINISH",
+        intercept: "CUT",
+        counter_lane: "READ",
+        counter_shoulder: "SHOULDER",
+        protect_lane: "PROTECT",
+        bodyguard: "GUARD",
+        bodyguard_hold: "HOLD",
+        bridge_trap: "TRAP",
+        bridge_guard: "BRIDGE",
+        door_guard: "DOOR",
+        door_trap: "TRAP",
+        pressure_finish: "PUNCH",
+        center_hold: "CENTER",
+        fallback: "RESET",
+        refine: "REFINE"
+      };
+      const actionLabel = tagMap[u.aiDecisionTag] || (u.aiDecisionTag ? String(u.aiDecisionTag).replace(/_/g, "-").slice(0, 10) : "");
+      const koText = `KO ${Math.round(clamp((u.aiKOChance || 0) * 100, 0, 100))}%`;
+      const riskText = `RISK ${Math.round(clamp((u.aiRiskChance || 0) * 100, 0, 100))}%`;
+      const statsLabel = `${koText} / ${riskText}`;
+      const padX = 8;
+      const labelY = u.y - u.r - 36;
+
+      ctx.save();
+      ctx.font = "700 11px ui-monospace, Menlo, Consolas, monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const textW = Math.ceil(ctx.measureText(label).width);
+      ctx.font = "700 9px ui-monospace, Menlo, Consolas, monospace";
+      const actionW = actionLabel ? Math.ceil(ctx.measureText(actionLabel).width) : 0;
+      const statsW = Math.ceil(ctx.measureText(statsLabel).width);
+      const boxW = Math.max(textW, actionW, statsW) + padX * 2;
+      const boxH = actionLabel ? 38 : 28;
+      const boxX = Math.round(u.x - boxW * 0.5);
+      const boxTop = Math.round(labelY - boxH * 0.5);
+
+      ctx.fillStyle = "rgba(0,8,4,0.82)";
+      ctx.strokeStyle = "rgba(0,228,102,0.80)";
+      ctx.lineWidth = 1.4;
+      ctx.shadowColor = "rgba(0,228,102,0.55)";
+      ctx.shadowBlur = 12;
+      roundRect(ctx, boxX, boxTop, boxW, boxH, 7);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "rgba(225,255,239,0.96)";
+      ctx.font = "700 11px ui-monospace, Menlo, Consolas, monospace";
+      ctx.fillText(label, Math.round(u.x), Math.round(labelY - 10));
+      if (actionLabel){
+        ctx.globalAlpha = 0.88;
+        ctx.fillStyle = "rgba(165,255,206,0.92)";
+        ctx.font = "700 9px ui-monospace, Menlo, Consolas, monospace";
+        ctx.fillText(actionLabel, Math.round(u.x), Math.round(labelY + 1));
+      }
+      ctx.globalAlpha = 0.84;
+      ctx.fillStyle = "rgba(140,255,190,0.88)";
+      ctx.font = "700 8px ui-monospace, Menlo, Consolas, monospace";
+      ctx.fillText(statsLabel, Math.round(u.x), Math.round(labelY + 12));
+      ctx.restore();
+    }
   }
 
   function drawFootballBall(){
@@ -4533,6 +5982,9 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       const dx = x - p.cx, dy = y - p.cy;
       return (dx*dx + dy*dy) <= (p.radius * p.radius);
     }
+    if (isBridgesStage()){
+      return isInsideBridgesSurface(x, y);
+    }
     return x >= p.x && x <= (p.x + p.w) && y >= p.y && y <= (p.y + p.h);
   }
 
@@ -4645,6 +6097,27 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       ctx.fill();
       ctx.restore();
     }
+  }
+  function drawUnlockToast(){
+    if (!unlockToast.active) return;
+    const w = Math.min(420, Math.floor(W * 0.74));
+    const h = 96;
+    const x = Math.floor(W / 2 - w / 2);
+    const y = 22;
+    ctx.save();
+    drawPanel(x, y, w, h);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = COL_NEON;
+    ctx.shadowColor = "rgba(0,228,102,0.78)";
+    ctx.shadowBlur = 16;
+    ctx.font = "800 24px ui-monospace, Menlo, Consolas, monospace";
+    ctx.fillText(unlockToast.title || "NEW MAP UNLOCKED", W / 2, y + 34);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(217,255,239,0.88)";
+    ctx.font = "700 18px ui-monospace, Menlo, Consolas, monospace";
+    ctx.fillText(unlockToast.subtitle || "BRIDGES", W / 2, y + 66);
+    ctx.restore();
   }
 
   function drawPlanLines(){
@@ -5035,9 +6508,9 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
 
   function drawSetup(t){
     drawNeonGrid(t);
-    drawTitle(Math.floor(H * 0.18), "CUSTOM GAME");
-
     const { panelW, panelH, px, py, viewX, viewY, viewW, viewH } = getSetupLayout();
+    drawTitle(Math.max(92, py - 72), "CUSTOM GAME");
+
     drawPanel(px, py, panelW, panelH);
 
     if (setupScrollMax > 0){
@@ -5058,7 +6531,6 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       ctx.restore();
     }
 
-        // Buttons (scroll area clipped + footer always visible)
     const mx = input.x, my = input.y;
     ctx.save();
     ctx.beginPath();
@@ -5122,9 +6594,10 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     settingsScrollY = clamp(settingsScrollY, 0, settingsScrollMax);
 
     const rowX = viewX;
-    let rowY = viewY + 110 - settingsScrollY;
-    let r1 = null;
-    let r2 = null;
+    let rowY = viewY + 186 - settingsScrollY;
+    let soundSlider = null;
+    let musicSlider = null;
+    let devToggle = null;
 
     const hitTargets = [];
     const drawColorSection = (label, team, yStart) => {
@@ -5187,8 +6660,9 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     ctx.rect(viewX, viewY, viewW, viewH);
     ctx.clip();
 
-    r1 = drawToggleRow(rowX, viewY + 24 - settingsScrollY, "SOUND", settings.sound, viewW);
-    r2 = drawToggleRow(rowX, viewY + 66 - settingsScrollY, "MUSIC", settings.music, viewW);
+    soundSlider = drawVolumeSliderRow(rowX, viewY + 20 - settingsScrollY, "SOUND", settings.soundVolume, viewW);
+    musicSlider = drawVolumeSliderRow(rowX, viewY + 82 - settingsScrollY, "MUSIC", settings.musicVolume, viewW);
+    devToggle = drawToggleRow(rowX, viewY + 144 - settingsScrollY, "DEV MODE", settings.devMode, viewW);
     rowY = drawColorSection("PLAYER ONE", 1, rowY);
     rowY = drawColorSection("PLAYER TWO", 2, rowY);
     ctx.restore();
@@ -5214,15 +6688,41 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       ctx.fillRect(barX, thumbY, 6, thumbH);
       ctx.restore();
     }
-    if (input.justUp){
-      if (r1 && pointInRect(mx, my, r1)){
-        setSoundEnabled(!settings.sound);
-        clickSound();
-      } else if (r2 && pointInRect(mx, my, r2)){
-        setMusicEnabled(!settings.music, true);
-        clickSound();
+    const updateSliderValue = (rect, key) => {
+      if (!rect) return;
+      const t = clamp((mx - rect.trackX) / rect.trackW, 0, 1);
+      if (key === "sound"){
+        const prev = settings.soundVolume;
+        setSoundVolume(t);
+        if (Math.abs(prev - settings.soundVolume) >= 0.03 && settings.soundVolume > 0.001 && canPlaySfx("sound_preview", 0.08)){
+          tone(620, 0.035, "triangle", 0.024, 0, 760);
+        }
+      } else if (key === "music"){
+        setMusicVolume(t, true);
       }
-      if (pointInSettingsScrollArea(mx, my)){
+    };
+    if (input.justDown){
+      if (soundSlider && pointInRect(mx, my, soundSlider)){
+        settingsSliderDrag.key = "sound";
+        clearSettingsTouchScroll();
+        ui.pressed = null;
+        updateSliderValue(soundSlider, "sound");
+      } else if (musicSlider && pointInRect(mx, my, musicSlider)){
+        settingsSliderDrag.key = "music";
+        clearSettingsTouchScroll();
+        ui.pressed = null;
+        updateSliderValue(musicSlider, "music");
+      }
+    }
+    if (input.down && settingsSliderDrag.key){
+      if (settingsSliderDrag.key === "sound") updateSliderValue(soundSlider, "sound");
+      else if (settingsSliderDrag.key === "music") updateSliderValue(musicSlider, "music");
+    }
+    if (input.justUp){
+      if (devToggle && pointInRect(mx, my, devToggle)){
+        setDevModeEnabled(!settings.devMode);
+        clickSound();
+      } else if (pointInSettingsScrollArea(mx, my)){
         for (const h of hitTargets){
           if (!pointInRect(mx, my, h)) continue;
           const ok = setTeamColorPreference(h.team, h.key);
@@ -5462,6 +6962,11 @@ const mx = input.x, my = input.y;
   }
     lastT = tNow;
 
+    if (unlockToast.active){
+      unlockToast.timer = Math.max(0, unlockToast.timer - dt);
+      if (unlockToast.timer <= 0) unlockToast.active = false;
+    }
+
     updateTransition(dt);
 
     // Ensure UI
@@ -5489,6 +6994,7 @@ const mx = input.x, my = input.y;
     else { drawNeonGrid(t); }
 
     drawTransitionOverlay();
+    drawUnlockToast();
     drawBloomPass();
     input.justDown = false;
     input.justUp = false;
