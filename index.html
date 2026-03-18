@@ -373,6 +373,12 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   function isMobileCompactLayout(){
     return isPhoneViewport();
   }
+  function isShortViewport(){
+    return H <= 760 || (W <= 1280 && H <= 820);
+  }
+  function isSetupCompactLayout(){
+    return isMobileCompactLayout() || isShortViewport();
+  }
   function needsLandscapeRotateOverlay(){
     return isPhoneViewport() && H > W;
   }
@@ -4553,14 +4559,14 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   }
 
   function getSetupLayout(){
-    if (isMobileCompactLayout()){
-      const panelW = Math.min(740, Math.floor(W * 0.94));
-      const panelH = Math.max(250, H - 108);
+    if (isSetupCompactLayout()){
+      const panelW = Math.min(760, Math.floor(W * 0.92));
+      const panelH = clamp(Math.floor(H - 150), 470, Math.max(470, H - 84));
       const px = Math.floor(W/2 - panelW/2);
-      const py = Math.max(78, Math.floor(H * 0.16));
-      const pad = 16;
-      const headerH = 30;
-      const footerH = 82;
+      const py = Math.floor(clamp(H * 0.17, 84, Math.max(84, H - panelH - 36)));
+      const pad = 18;
+      const headerH = 34;
+      const footerH = 88;
       const viewX = px + pad;
       const viewY = py + headerH;
       const viewW = panelW - pad*2 - 8;
@@ -4643,7 +4649,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     if (!mapUnlocks.bridges && config.stage === "BRIDGES") config.stage = "CLASSIC";
     if (!mapUnlocks.doors && config.stage === "DOORS") config.stage = "CLASSIC";
     const { panelW, panelH, px, py, pad, viewX, viewY, viewW, viewH } = getSetupLayout();
-    const compact = isMobileCompactLayout();
+    const compact = isSetupCompactLayout();
 
     let y = viewY - setupScrollY;
     function section(label){
@@ -6605,7 +6611,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
   function drawSetup(t){
     drawNeonGrid(t);
     const { panelW, panelH, px, py, viewX, viewY, viewW, viewH } = getSetupLayout();
-    drawTitle(isMobileCompactLayout() ? Math.max(54, py - 26) : Math.max(92, py - 72), "CUSTOM GAME");
+    drawTitle(isSetupCompactLayout() ? Math.max(56, py - 28) : Math.max(92, py - 72), "CUSTOM GAME");
 
     drawPanel(px, py, panelW, panelH);
 
@@ -6673,7 +6679,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       }
     }
 
-    if (!isMobileCompactLayout()){
+    if (!isSetupCompactLayout()){
       ctx.save();
       ctx.fillStyle = "rgba(0,228,102,0.45)";
       ctx.font = `12px ${FONT}`;
@@ -6685,9 +6691,8 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
 
   function drawSettings(t){
     drawNeonGrid(t);
-    drawTitle(Math.floor(H * 0.18), "SETTINGS");
-
     const { panelW, panelH, px, py, viewX, viewY, viewW, viewH } = getSettingsLayout();
+    drawTitle(isShortViewport() ? Math.max(56, py - 28) : Math.floor(H * 0.18), "SETTINGS");
     drawPanel(px, py, panelW, panelH);
     settingsScrollY = clamp(settingsScrollY, 0, settingsScrollMax);
 
