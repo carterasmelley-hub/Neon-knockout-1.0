@@ -1696,7 +1696,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const compact = isPhoneViewport() || isShortViewport();
     const phoneLandscape = isPhoneLandscapeViewport();
     const scaleByW = (W - (compact ? 28 : 72)) / 820;
-    const hudReserve = phoneLandscape ? 156 : compact ? 118 : isMobileCompactLayout() ? 170 : 230;
+    const hudReserve = phoneLandscape ? 172 : compact ? 118 : isMobileCompactLayout() ? 170 : 230;
     const scaleByH = (H - hudReserve) / 520; // leave room for HUD + buttons
     return clamp(Math.min(scaleByMin, scaleByW, scaleByH), phoneLandscape ? 0.42 : compact ? 0.48 : isMobileCompactLayout() ? 0.52 : 0.58, 1.2);
   }
@@ -4619,7 +4619,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     );
     const bh = phoneLandscape ? 34 : phonePortrait ? 42 : compact ? 46 : 54;
     const x = Math.floor(W/2 - bw/2);
-    let y = Math.floor(H * (phoneLandscape ? 0.21 : phonePortrait ? 0.33 : compact ? 0.40 : 0.48));
+    let y = Math.floor(H * (phoneLandscape ? 0.25 : phonePortrait ? 0.33 : compact ? 0.40 : 0.48));
     const quickW = Math.floor(bw * (phoneLandscape ? 1.00 : 1.10));
     const quickH = Math.floor(bh * (phoneLandscape ? 1.00 : 1.10));
     const quickX = Math.floor(W/2 - quickW/2);
@@ -4645,13 +4645,17 @@ function lerp(a, b, t){ return a + (b - a) * t; }
 
   function getSetupLayout(){
     if (isSetupCompactLayout()){
+      const phoneLandscape = isPhoneLandscapeViewport();
+      const phoneViewport = isPhoneViewport();
       const panelW = Math.min(760, Math.floor(W * 0.92));
-      const panelH = clamp(Math.floor(H - 150), 470, Math.max(470, H - 84));
+      const panelH = clamp(Math.floor(H - (phoneLandscape ? 38 : phoneViewport ? 78 : 150)), phoneLandscape ? 320 : 470, Math.max(phoneLandscape ? 320 : 470, H - (phoneLandscape ? 20 : 84)));
       const px = Math.floor(W/2 - panelW/2);
-      const py = Math.floor(clamp(H * 0.17, 84, Math.max(84, H - panelH - 36)));
+      const py = Math.floor(phoneViewport
+        ? clamp(phoneLandscape ? 14 : 28, 12, Math.max(12, H - panelH - 16))
+        : clamp(H * 0.17, 84, Math.max(84, H - panelH - 36)));
       const pad = 18;
-      const headerH = 34;
-      const footerH = 88;
+      const headerH = phoneViewport ? 12 : 34;
+      const footerH = phoneLandscape ? 72 : 88;
       const viewX = px + pad;
       const viewY = py + headerH;
       const viewW = panelW - pad*2 - 8;
@@ -4673,13 +4677,17 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   }
   function getSettingsLayout(){
     if (isMobileCompactLayout() || isShortViewport()){
+      const phoneLandscape = isPhoneLandscapeViewport();
+      const phoneViewport = isPhoneViewport();
       const panelW = Math.min(740, Math.floor(W * 0.94));
-      const panelH = Math.max(250, H - (isPhoneLandscapeViewport() ? 78 : 108));
+      const panelH = Math.max(250, H - (phoneLandscape ? 34 : phoneViewport ? 84 : 108));
       const px = Math.floor(W/2 - panelW/2);
-      const py = Math.max(isPhoneLandscapeViewport() ? 52 : 78, Math.floor(H * (isPhoneLandscapeViewport() ? 0.08 : 0.16)));
+      const py = phoneViewport
+        ? Math.max(phoneLandscape ? 14 : 28, Math.floor(H * (phoneLandscape ? 0.03 : 0.08)))
+        : Math.max(78, Math.floor(H * 0.16));
       const pad = 18;
-      const headerH = 30;
-      const footerH = isPhoneLandscapeViewport() ? 78 : 28;
+      const headerH = phoneViewport ? 12 : 30;
+      const footerH = phoneLandscape ? 76 : phoneViewport ? 88 : 28;
       const viewX = px + pad;
       const viewY = py + headerH;
       const viewW = panelW - pad*2 - 8;
@@ -4700,13 +4708,19 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     return { panelW, panelH, px, py, pad, viewX, viewY, viewW, viewH };
   }
   function getCreditsLayout(){
-    const panelW = Math.min(760, Math.floor(W * 0.90));
-    const panelH = clamp(Math.floor(H * 0.40), 240, 320);
+    const compact = isPhoneViewport() || isShortViewport();
+    const phoneLandscape = isPhoneLandscapeViewport();
+    const panelW = Math.min(760, Math.floor(W * (compact ? 0.92 : 0.90)));
+    const panelH = compact
+      ? clamp(Math.floor(H - (phoneLandscape ? 36 : 108)), 180, Math.max(180, H - (phoneLandscape ? 18 : 48)))
+      : clamp(Math.floor(H * 0.40), 240, 320);
     const px = Math.floor(W/2 - panelW/2);
-    const py = Math.floor(clamp(H * 0.30, 104, Math.max(104, H - panelH - 180)));
-    const pad = 22;
-    const headerH = 64;
-    const footerH = 20;
+    const py = compact
+      ? Math.floor(clamp(phoneLandscape ? 14 : 34, 12, Math.max(12, H - panelH - 18)))
+      : Math.floor(clamp(H * 0.30, 104, Math.max(104, H - panelH - 180)));
+    const pad = compact ? 18 : 22;
+    const headerH = compact ? 12 : 64;
+    const footerH = compact ? (phoneLandscape ? 72 : 86) : 20;
     const viewX = px + pad;
     const viewY = py + headerH;
     const viewW = panelW - pad*2 - 10;
@@ -4857,10 +4871,13 @@ function lerp(a, b, t){ return a + (b - a) * t; }
 
   function buildCreditsUI(){
     ui.buttons = [];
-    const bw = Math.min(280, Math.floor(W * 0.38));
-    const bh = 50;
-    const { py, panelH } = getCreditsLayout();
-    const by = Math.floor(Math.min(H - bh - 34, py + panelH + 24));
+    const compact = isPhoneViewport() || isShortViewport();
+    const { py, panelH, viewW } = getCreditsLayout();
+    const bw = compact ? Math.min(viewW, 320) : Math.min(280, Math.floor(W * 0.38));
+    const bh = compact ? 44 : 50;
+    const by = compact
+      ? Math.floor(py + panelH - bh - 14)
+      : Math.floor(Math.min(H - bh - 34, py + panelH + 24));
     creditsScrollY = clamp(creditsScrollY, 0, creditsScrollMax);
     addButton("back", Math.floor(W/2 - bw/2), by, bw, bh, "BACK", () => goTo(State.MENU));
   }
@@ -6407,9 +6424,9 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     const totalW = Math.min(Math.floor(W * (compact ? 0.94 : 0.88)), Math.floor(game.platform.w * (compact ? 0.96 : 0.92)));
     const pauseW = clamp(Math.floor(totalW * (compact ? 0.20 : 0.22)), compact ? 74 : 110, compact ? 116 : 170);
     const bw = Math.floor((totalW - pauseW - gap*2) / 2);
-    const bh = phoneLandscape ? 32 : compact ? 36 : 44;
+    const bh = phoneLandscape ? 30 : compact ? 36 : 44;
     const x = Math.floor(W/2 - totalW/2);
-    const y = Math.floor(game.platform.y + game.platform.h + (phoneLandscape ? 8 : compact ? 12 : 22));
+    const y = Math.floor(game.platform.y + game.platform.h + (phoneLandscape ? 4 : compact ? 12 : 22));
 
     addButton("primary", x, y, bw, bh, "START", () => {
       if (isSinglePlayerMode()){
@@ -6740,7 +6757,9 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
   function drawSetup(t){
     drawNeonGrid(t);
     const { panelW, panelH, px, py, viewX, viewY, viewW, viewH } = getSetupLayout();
-    drawTitle(isSetupCompactLayout() ? Math.max(34, py - 34) : Math.max(92, py - 72), "CUSTOM GAME");
+    if (!isPhoneViewport()){
+      drawTitle(isSetupCompactLayout() ? Math.max(34, py - 34) : Math.max(92, py - 72), "CUSTOM GAME");
+    }
 
     drawPanel(px, py, panelW, panelH);
 
@@ -6821,7 +6840,9 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
   function drawSettings(t){
     drawNeonGrid(t);
     const { panelW, panelH, px, py, viewX, viewY, viewW, viewH } = getSettingsLayout();
-    drawTitle(isShortViewport() ? Math.max(56, py - 28) : Math.floor(H * 0.18), "SETTINGS");
+    if (!isPhoneViewport()){
+      drawTitle(isShortViewport() ? Math.max(56, py - 28) : Math.floor(H * 0.18), "SETTINGS");
+    }
     drawPanel(px, py, panelW, panelH);
     settingsScrollY = clamp(settingsScrollY, 0, settingsScrollMax);
     const compact = isMobileCompactLayout() || isShortViewport();
@@ -6978,9 +6999,10 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
 
   function drawCredits(t){
     drawNeonGrid(t);
-    drawTitle(Math.floor(H * 0.18), "CREDITS");
-
     const { panelW, panelH, px, py, viewX, viewY, viewW, viewH } = getCreditsLayout();
+    if (!isPhoneViewport()){
+      drawTitle(Math.floor(H * 0.18), "CREDITS");
+    }
     drawPanel(px, py, panelW, panelH);
     creditsScrollMax = 0;
     creditsScrollY = 0;
@@ -6989,11 +7011,12 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "rgba(217,255,239,0.94)";
-    ctx.font = "700 22px ui-monospace, Menlo, Consolas, monospace";
-    ctx.fillText("Created by Aaron", W/2, viewY + Math.floor(viewH * 0.38));
-    ctx.font = "700 18px ui-monospace, Menlo, Consolas, monospace";
+    const compact = isPhoneViewport() || isShortViewport();
+    ctx.font = compact ? "700 18px ui-monospace, Menlo, Consolas, monospace" : "700 22px ui-monospace, Menlo, Consolas, monospace";
+    ctx.fillText("Created by Aaron", W/2, viewY + Math.floor(viewH * (compact ? 0.34 : 0.38)));
+    ctx.font = compact ? "700 15px ui-monospace, Menlo, Consolas, monospace" : "700 18px ui-monospace, Menlo, Consolas, monospace";
     ctx.fillStyle = "rgba(175,255,214,0.90)";
-    ctx.fillText("Music: Arcade Ride by Vens Adams", W/2, viewY + Math.floor(viewH * 0.62));
+    ctx.fillText("Music: Arcade Ride by Vens Adams", W/2, viewY + Math.floor(viewH * (compact ? 0.62 : 0.62)));
     ctx.restore();
 
     const mx = input.x, my = input.y;
