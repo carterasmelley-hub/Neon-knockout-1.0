@@ -576,31 +576,50 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   let audioCtx = null;
   let bgMusicEl = null;
   let sfxMasterGain = null;
+  let musicMasterGain = null;
+  let musicSourceNode = null;
   const sfxCooldowns = Object.create(null);
   function sfxVolumeScalar(){
     const v = clamp(settings.soundVolume, 0, 1);
-    return v <= 0.001 ? 0 : Math.pow(v, 1.35);
+    return v <= 0.001 ? 0 : 0.20 + 1.20 * Math.pow(v, 1.08);
   }
   function musicVolumeScalar(){
     const v = clamp(settings.musicVolume, 0, 1);
-    return v <= 0.001 ? 0 : Math.pow(v, 1.15);
+    return v <= 0.001 ? 0 : Math.pow(v, 1.05);
   }
   function ensureAudio(){
-    if (!settings.sound || settings.soundVolume <= 0.001) return null;
+    const wantsSfx = !!(settings.sound && settings.soundVolume > 0.001);
+    const wantsMusic = !!(settings.music && settings.musicVolume > 0.001);
+    if (!wantsSfx && !wantsMusic) return null;
     if (!audioCtx){
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
       audioCtx = new AC();
-      sfxMasterGain = audioCtx.createGain();
-      sfxMasterGain.gain.setValueAtTime(sfxVolumeScalar(), audioCtx.currentTime);
-      sfxMasterGain.connect(audioCtx.destination);
-    } else if (!sfxMasterGain){
+    }
+    if (!sfxMasterGain){
       sfxMasterGain = audioCtx.createGain();
       sfxMasterGain.gain.setValueAtTime(sfxVolumeScalar(), audioCtx.currentTime);
       sfxMasterGain.connect(audioCtx.destination);
     }
+    if (!musicMasterGain){
+      musicMasterGain = audioCtx.createGain();
+      musicMasterGain.gain.setValueAtTime(0.72 * musicVolumeScalar(), audioCtx.currentTime);
+      musicMasterGain.connect(audioCtx.destination);
+    }
     if (audioCtx.state === "suspended") audioCtx.resume().catch(()=>{});
     return audioCtx;
+  }
+  function ensureMusicGraph(){
+    const ac = ensureAudio();
+    if (!ac || !bgMusicEl || musicSourceNode) return;
+    try{
+      musicSourceNode = ac.createMediaElementSource(bgMusicEl);
+      musicSourceNode.connect(musicMasterGain || ac.destination);
+      bgMusicEl.volume = 1;
+    } catch (_){
+      musicSourceNode = null;
+      bgMusicEl.volume = 0.72 * musicVolumeScalar();
+    }
   }
   function refreshAudioLevels(){
     if (audioCtx && sfxMasterGain){
@@ -609,8 +628,14 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       sfxMasterGain.gain.setValueAtTime(sfxMasterGain.gain.value, t0);
       sfxMasterGain.gain.linearRampToValueAtTime(sfxVolumeScalar(), t0 + 0.04);
     }
+    if (audioCtx && musicMasterGain){
+      const t0 = audioCtx.currentTime;
+      musicMasterGain.gain.cancelScheduledValues(t0);
+      musicMasterGain.gain.setValueAtTime(musicMasterGain.gain.value, t0);
+      musicMasterGain.gain.linearRampToValueAtTime(0.72 * musicVolumeScalar(), t0 + 0.04);
+    }
     if (bgMusicEl){
-      bgMusicEl.volume = 0.72 * musicVolumeScalar();
+      bgMusicEl.volume = musicSourceNode ? 1 : 0.72 * musicVolumeScalar();
     }
   }
   function ensureMusicEl(){
@@ -621,15 +646,18 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       a.volume = 0.72 * musicVolumeScalar();
       a.preload = "auto";
       bgMusicEl = a;
+      ensureMusicGraph();
     } catch (_){
       bgMusicEl = null;
     }
     return bgMusicEl;
   }
   function applyMusicState(userGesture=false){
+    if (settings.music && settings.musicVolume > 0.001) ensureAudio();
     const m = ensureMusicEl();
     if (!m) return;
-    m.volume = 0.72 * musicVolumeScalar();
+    ensureMusicGraph();
+    refreshAudioLevels();
     if (!settings.music || settings.musicVolume <= 0.001 || document.hidden){
       m.pause();
       return;
@@ -710,47 +738,47 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   function impactSound(strength){
     if (!canPlaySfx("impact", 0.045)) return;
     const f = clamp(220 + strength * 260, 200, 700);
-    beep(f, 0.05, "sawtooth", clamp(0.02 + strength * 0.06, 0.02, 0.09));
+    beep(f, 0.05, "sawtooth", clamp(0.028 + strength * 0.072, 0.028, 0.11));
   }
   function heavyKnockoutSmash(strength=1){
     if (!canPlaySfx("smash", 0.12)) return;
     const s = clamp(strength, 0, 1);
-    tone(180 + 60 * s, 0.11, "sawtooth", 0.06 + 0.03 * s, 0, 72 + 22 * s);
-    tone(420 + 120 * s, 0.075, "square", 0.018 + 0.012 * s, 0.012, 180 + 60 * s);
-    noiseBurst(0.07, 0.018 + 0.012 * s, 0.002, 420, 3800);
+    tone(180 + 60 * s, 0.11, "sawtooth", 0.078 + 0.042 * s, 0, 72 + 22 * s);
+    tone(420 + 120 * s, 0.075, "square", 0.026 + 0.016 * s, 0.012, 180 + 60 * s);
+    noiseBurst(0.07, 0.028 + 0.016 * s, 0.002, 420, 3800);
   }
   function fallOutSound(count=1){
     if (!canPlaySfx("fallout", 0.06)) return;
     const s = clamp((count - 1) * 0.18, 0, 0.35);
-    tone(260, 0.14, "triangle", 0.04 + s * 0.03, 0, 70);
-    noiseBurst(0.09, 0.015 + s * 0.01, 0.018, 1800, 7200);
+    tone(260, 0.14, "triangle", 0.052 + s * 0.036, 0, 70);
+    noiseBurst(0.09, 0.024 + s * 0.012, 0.018, 1800, 7200);
   }
   function ballPickupSound(stolen=false){
     if (!canPlaySfx(stolen ? "ball_steal" : "ball_pickup", 0.05)) return;
     if (stolen){
-      tone(420, 0.045, "square", 0.03, 0, 620);
-      tone(640, 0.05, "triangle", 0.024, 0.03, 820);
+      tone(420, 0.045, "square", 0.04, 0, 620);
+      tone(640, 0.05, "triangle", 0.03, 0.03, 820);
     } else {
-      tone(760, 0.045, "triangle", 0.028, 0, 980);
-      tone(980, 0.05, "sine", 0.02, 0.026, 1220);
+      tone(760, 0.045, "triangle", 0.036, 0, 980);
+      tone(980, 0.05, "sine", 0.026, 0.026, 1220);
     }
   }
   function footballScoreSound(){
     if (!canPlaySfx("football_score", 0.2)) return;
-    tone(360, 0.08, "square", 0.035, 0, 520);
-    tone(540, 0.09, "square", 0.04, 0.07, 760);
-    tone(810, 0.16, "triangle", 0.045, 0.15, 1120);
+    tone(360, 0.08, "square", 0.046, 0, 520);
+    tone(540, 0.09, "square", 0.052, 0.07, 760);
+    tone(810, 0.16, "triangle", 0.058, 0.15, 1120);
   }
   function doorToggleSound(){
     if (!canPlaySfx("door_toggle", 0.08)) return;
-    tone(190, 0.06, "sawtooth", 0.028, 0, 130);
-    tone(260, 0.09, "square", 0.016, 0.025, 210);
+    tone(190, 0.06, "sawtooth", 0.036, 0, 130);
+    tone(260, 0.09, "square", 0.022, 0.025, 210);
   }
   function bumperHitSound(strength=1){
     if (!canPlaySfx("bumper", 0.05)) return;
     const s = clamp(strength, 0, 1);
-    tone(540 + 120 * s, 0.045, "square", 0.024 + 0.012 * s, 0, 860 + 140 * s);
-    tone(820 + 160 * s, 0.05, "triangle", 0.018 + 0.008 * s, 0.018, 1180 + 180 * s);
+    tone(540 + 120 * s, 0.045, "square", 0.034 + 0.016 * s, 0, 860 + 140 * s);
+    tone(820 + 160 * s, 0.05, "triangle", 0.024 + 0.010 * s, 0.018, 1180 + 180 * s);
   }
   function winSound(){
     beep(523.25, 0.07, "square", 0.04);
@@ -4508,11 +4536,17 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const titleKey = String(text || "").trim().toUpperCase();
     const mainTitle = (titleKey === "NEON KNOCKOUT");
     const displayText = mainTitle ? "Neon knockout" : text;
+    const phoneLandscape = isPhoneLandscapeViewport();
+    const phonePortrait = isPhoneViewport() && !phoneLandscape;
 
     if (mainTitle){
       // Neon-sign style title inspired by reference image.
       const pulse = 0.86 + 0.14 * Math.sin(now() * 0.0038);
-      const titleSize = isShortViewport() || isPhoneViewport()
+      const titleSize = phoneLandscape
+        ? Math.floor(clamp(Math.min(W * 0.078, H * 0.18), 30, 48))
+        : phonePortrait
+        ? Math.floor(clamp(Math.min(W * 0.095, H * 0.12), 36, 56))
+        : (isShortViewport() || isPhoneViewport())
         ? Math.floor(clamp(Math.min(W * 0.11, H * 0.14), 42, 68))
         : 72;
       ctx.font = `500 ${titleSize}px "Trebuchet MS", "Segoe UI", sans-serif`;
@@ -4576,27 +4610,33 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   // ============================================================
   function buildMenuUI(){
     ui.buttons = [];
+    const phoneLandscape = isPhoneLandscapeViewport();
+    const phonePortrait = isPhoneViewport() && !phoneLandscape;
     const compact = isShortViewport() || isPhoneViewport();
-    const bw = Math.min(compact ? 320 : 360, Math.floor(W * (compact ? 0.56 : 0.50)));
-    const bh = compact ? 46 : 54;
+    const bw = Math.min(
+      phoneLandscape ? 250 : phonePortrait ? 296 : compact ? 320 : 360,
+      Math.floor(W * (phoneLandscape ? 0.42 : phonePortrait ? 0.72 : compact ? 0.56 : 0.50))
+    );
+    const bh = phoneLandscape ? 34 : phonePortrait ? 42 : compact ? 46 : 54;
     const x = Math.floor(W/2 - bw/2);
-    let y = Math.floor(H * (compact ? 0.40 : 0.48));
-    const quickW = Math.floor(bw * 1.10);
-    const quickH = Math.floor(bh * 1.10);
+    let y = Math.floor(H * (phoneLandscape ? 0.21 : phonePortrait ? 0.33 : compact ? 0.40 : 0.48));
+    const quickW = Math.floor(bw * (phoneLandscape ? 1.00 : 1.10));
+    const quickH = Math.floor(bh * (phoneLandscape ? 1.00 : 1.10));
     const quickX = Math.floor(W/2 - quickW/2);
+    const rowGap = phoneLandscape ? 42 : phonePortrait ? 50 : compact ? 58 : 70;
 
     addButton("quick", quickX, y, quickW, quickH, "START", () => {
       startNewGame({ players:1, mode:"KNOCKOUT", difficulty:"NORMAL", stage:"CLASSIC", series:"BO3", speed:"1X", modifier:"STANDARD" });
     });
-    y += compact ? 58 : 70;
+    y += rowGap;
     addButton("start", x, y, bw, bh, "CUSTOM GAME", () => goTo(State.SETUP));
-    y += compact ? 58 : 70;
+    y += rowGap;
     addButton("settings", x, y, bw, bh, "SETTINGS", () => {
       settingsBackState = null;
       helpBackState = null;
       goTo(State.SETTINGS);
     });
-    y += compact ? 58 : 70;
+    y += rowGap;
     addButton("credits", x, y, bw, bh, "CREDITS", () => {
       helpBackState = null;
       goTo(State.CREDITS);
@@ -6647,7 +6687,11 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
   // ============================================================
   function drawMenu(t){
     drawNeonGrid(t);
-    const titleY = Math.floor(H * ((isShortViewport() || isPhoneViewport()) ? 0.14 : 0.20));
+    const titleY = Math.floor(
+      isPhoneLandscapeViewport() ? Math.max(34, H * 0.10)
+      : (isPhoneViewport() ? Math.max(60, H * 0.14)
+      : (isShortViewport() ? H * 0.14 : H * 0.20))
+    );
     drawTitle(titleY, "NEON KNOCKOUT");
 
     const mx = input.x, my = input.y;
