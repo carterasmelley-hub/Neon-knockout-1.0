@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover" />
   <title>Neon Knockout</title>
   <link rel="icon" href="data:,">
   <style>
@@ -20,6 +20,8 @@
       display: block;
       width: 100vw;
       height: 100vh;
+      width: 100dvw;
+      height: 100dvh;
       image-rendering: pixelated;
       cursor: crosshair;
       touch-action: none;
@@ -380,11 +382,12 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     return isMobileCompactLayout() || isShortViewport();
   }
   function needsLandscapeRotateOverlay(){
-    return isPhoneViewport() && H > W;
+    return false;
   }
   function resize(){
-    W = Math.floor(window.innerWidth);
-    H = Math.floor(window.innerHeight);
+    const vv = window.visualViewport;
+    W = Math.floor(vv?.width || window.innerWidth);
+    H = Math.floor(vv?.height || window.innerHeight);
     canvas.width = Math.floor(W * DPR);
     canvas.height = Math.floor(H * DPR);
     bloomCanvas.width = W;
@@ -1628,24 +1631,26 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   function computeArenaScale(){
     const minDim = Math.min(W, H);
     const scaleByMin = minDim / 820;
-    const scaleByW = (W - 72) / 820;
-    const hudReserve = isMobileCompactLayout() ? 170 : 230;
+    const compact = isPhoneViewport() || isShortViewport();
+    const scaleByW = (W - (compact ? 32 : 72)) / 820;
+    const hudReserve = compact ? 118 : isMobileCompactLayout() ? 170 : 230;
     const scaleByH = (H - hudReserve) / 520; // leave room for HUD + buttons
-    return clamp(Math.min(scaleByMin, scaleByW, scaleByH), isMobileCompactLayout() ? 0.52 : 0.58, 1.2);
+    return clamp(Math.min(scaleByMin, scaleByW, scaleByH), compact ? 0.48 : isMobileCompactLayout() ? 0.52 : 0.58, 1.2);
   }
   function getArenaLayout(scale=computeArenaScale()){
     const footballMode = isFootballMode();
     const hockeyMode = isHockeyMode();
     const fieldMode = footballMode || hockeyMode;
     const circleStage = (!fieldMode && config.stage === "CIRCLE");
+    const compact = isPhoneViewport() || isShortViewport();
     const plat = { x:0, y:0, w:0, h:0, cx:0, cy:0, radius:0, shape:"rect" };
 
     if (fieldMode){
       // Wide field-sport arena (east-west).
-      plat.w = Math.floor(clamp(W * 0.92, 520, W - 44));
-      plat.h = Math.floor(clamp(H * 0.46, 230, Math.min(430, H - 210)));
+      plat.w = Math.floor(clamp(W * (compact ? 0.96 : 0.92), compact ? 420 : 520, W - (compact ? 20 : 44)));
+      plat.h = Math.floor(clamp(H * (compact ? 0.42 : 0.46), compact ? 180 : 230, Math.min(compact ? 330 : 430, H - (compact ? 120 : 210))));
       plat.x = Math.floor(W/2 - plat.w/2);
-      plat.y = Math.floor(H/2 - plat.h/2 + 26);
+      plat.y = Math.floor(H/2 - plat.h/2 + (compact ? 10 : 26));
       plat.cx = plat.x + plat.w/2;
       plat.cy = plat.y + plat.h/2;
       plat.radius = 0;
@@ -1655,7 +1660,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       plat.w = diam;
       plat.h = diam;
       plat.x = Math.floor(W/2 - diam/2);
-      plat.y = Math.floor(H/2 - diam/2 + 10);
+      plat.y = Math.floor(H/2 - diam/2 + (compact ? 0 : 10));
       plat.cx = plat.x + diam/2;
       plat.cy = plat.y + diam/2;
       plat.radius = diam/2;
@@ -1664,7 +1669,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       plat.w = Math.floor(820 * scale);
       plat.h = Math.floor(520 * scale);
       plat.x = Math.floor(W/2 - plat.w/2);
-      plat.y = Math.floor(H/2 - plat.h/2 + 30);
+      plat.y = Math.floor(H/2 - plat.h/2 + (compact ? 8 : 30));
       plat.cx = plat.x + plat.w/2;
       plat.cy = plat.y + plat.h/2;
       plat.radius = 0;
@@ -4471,7 +4476,10 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     if (mainTitle){
       // Neon-sign style title inspired by reference image.
       const pulse = 0.86 + 0.14 * Math.sin(now() * 0.0038);
-      ctx.font = "500 72px \"Trebuchet MS\", \"Segoe UI\", sans-serif";
+      const titleSize = isShortViewport() || isPhoneViewport()
+        ? Math.floor(clamp(Math.min(W * 0.11, H * 0.14), 42, 68))
+        : 72;
+      ctx.font = `500 ${titleSize}px "Trebuchet MS", "Segoe UI", sans-serif`;
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
 
@@ -4532,10 +4540,11 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   // ============================================================
   function buildMenuUI(){
     ui.buttons = [];
-    const bw = Math.min(360, Math.floor(W * 0.50));
-    const bh = 54;
+    const compact = isShortViewport() || isPhoneViewport();
+    const bw = Math.min(compact ? 320 : 360, Math.floor(W * (compact ? 0.56 : 0.50)));
+    const bh = compact ? 46 : 54;
     const x = Math.floor(W/2 - bw/2);
-    let y = Math.floor(H * 0.48);
+    let y = Math.floor(H * (compact ? 0.40 : 0.48));
     const quickW = Math.floor(bw * 1.10);
     const quickH = Math.floor(bh * 1.10);
     const quickX = Math.floor(W/2 - quickW/2);
@@ -4543,15 +4552,15 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     addButton("quick", quickX, y, quickW, quickH, "START", () => {
       startNewGame({ players:1, mode:"KNOCKOUT", difficulty:"NORMAL", stage:"CLASSIC", series:"BO3", speed:"1X", modifier:"STANDARD" });
     });
-    y += 70;
+    y += compact ? 58 : 70;
     addButton("start", x, y, bw, bh, "CUSTOM GAME", () => goTo(State.SETUP));
-    y += 70;
+    y += compact ? 58 : 70;
     addButton("settings", x, y, bw, bh, "SETTINGS", () => {
       settingsBackState = null;
       helpBackState = null;
       goTo(State.SETTINGS);
     });
-    y += 70;
+    y += compact ? 58 : 70;
     addButton("credits", x, y, bw, bh, "CREDITS", () => {
       helpBackState = null;
       goTo(State.CREDITS);
@@ -5941,7 +5950,7 @@ for (let i = 0; i < all.length; i++){
     const sideLabel = isTwoPlayerMode() ? "P2" : "AI";
     const p1Pal = getTeamPalette(1);
     const p2Pal = getTeamPalette(2);
-    const compact = isMobileCompactLayout();
+    const compact = isPhoneViewport() || isShortViewport();
     const bw = Math.floor(clamp(p.w * (compact ? 0.70 : 0.62), compact ? 280 : 340, compact ? 520 : 620));
     const bh = compact ? 42 : 48;
     const bx = Math.floor(W/2 - bw/2);
@@ -6314,7 +6323,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
   function buildGameUI(){
     ui.buttons = [];
 
-    const compact = isMobileCompactLayout();
+    const compact = isPhoneViewport() || isShortViewport();
     const gap = compact ? 8 : 12;
     const totalW = Math.min(Math.floor(W * (compact ? 0.94 : 0.88)), Math.floor(game.platform.w * (compact ? 0.96 : 0.92)));
     const pauseW = clamp(Math.floor(totalW * (compact ? 0.20 : 0.22)), compact ? 82 : 110, compact ? 124 : 170);
@@ -6345,7 +6354,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     addButton("pause_ingame", x + bw + gap, y, pauseW, bh, "PAUSE", () => {
       if (state === State.GAME) pauseGame();
     });
-    addButton("clear", x + bw + gap + pauseW + gap, y, bw, bh, "CLEAR (C)", () => clearPlans());
+    addButton("clear", x + bw + gap + pauseW + gap, y, bw, bh, compact ? "CLEAR" : "CLEAR (C)", () => clearPlans());
   }
 
   function setGameUIButtonStates(){
@@ -6599,7 +6608,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
   // ============================================================
   function drawMenu(t){
     drawNeonGrid(t);
-    const titleY = Math.floor(H * 0.20);
+    const titleY = Math.floor(H * ((isShortViewport() || isPhoneViewport()) ? 0.14 : 0.20));
     drawTitle(titleY, "NEON KNOCKOUT");
 
     const mx = input.x, my = input.y;
@@ -7122,7 +7131,7 @@ const mx = input.x, my = input.y;
   // Boot
   // ============================================================
   let resizeReflowTimer = null;
-  window.addEventListener("resize", () => {
+  function scheduleResponsiveRelayout(){
     if (resizeReflowTimer) clearTimeout(resizeReflowTimer);
     resizeReflowTimer = setTimeout(() => {
       resizeReflowTimer = null;
@@ -7150,7 +7159,10 @@ const mx = input.x, my = input.y;
       if (state === State.HELP){ buildHelpUI(); return; }
       if (state === State.WIN){ buildWinUI(); }
     }, 120);
-  }, { passive: true });
+  }
+  window.addEventListener("resize", scheduleResponsiveRelayout, { passive: true });
+  window.visualViewport?.addEventListener("resize", scheduleResponsiveRelayout, { passive: true });
+  window.visualViewport?.addEventListener("scroll", scheduleResponsiveRelayout, { passive: true });
 
   resetMatch();
   buildMenuUI();
