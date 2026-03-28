@@ -436,32 +436,32 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   const ONBOARDING_TUTORIALS = Object.freeze({
     KNOCKOUT: Object.freeze({
       title: "KNOCKOUT",
-      subtitle: "GOAL: Knock all opponents off the arena.",
+      subtitle: "GOAL: Knock every opponent off the map.",
       tips: Object.freeze([
-        "1) Tap a unit, then tap a spot to aim it.",
-        "2) Set all arrows, then press START.",
-        "3) Push opponents out of bounds.",
-        "4) Walls and bumpers can change movement."
+        "1) Tap a unit, then tap where you want it to go.",
+        "2) Aim all your units, then press START.",
+        "3) Bump enemies off the map.",
+        "4) Walls and bumpers can change your path."
       ])
     }),
     FOOTBALL: Object.freeze({
       title: "FOOTBALL",
-      subtitle: "GOAL: Bring the ball to the opponent end zone.",
+      subtitle: "GOAL: Carry the ball to the far end zone.",
       tips: Object.freeze([
-        "1) Move onto the ball to pick it up.",
-        "2) The carrier keeps the ball until knocked off.",
+        "1) Move onto the ball to grab it.",
+        "2) Keep it unless you get knocked off.",
         "3) Reach the far end zone to score.",
-        "4) Use teammates to block defenders."
+        "4) Use your team to block defenders."
       ])
     }),
     KEEP_AWAY: Object.freeze({
       title: "KEEP AWAY",
       subtitle: "GOAL: Hold the ball for 3 turns.",
       tips: Object.freeze([
-        "1) Move onto the ball to pick it up.",
-        "2) Hold the ball for 3 turns to win.",
-        "3) Push opponents away to protect the carrier.",
-        "4) If the carrier falls off, the ball resets to center."
+        "1) Move onto the ball to grab it.",
+        "2) Hold it for 3 turns to win.",
+        "3) Protect the ball carrier.",
+        "4) If the carrier falls off, the ball goes back to the middle."
       ])
     })
   });
@@ -6503,43 +6503,80 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     if (state !== State.GAME) return;
     if (!onboarding.active) return;
     const tutorial = getOnboardingTutorial(onboarding.mode || onboardingModeKey());
+    const compact = isPhoneViewport() || isShortViewport();
+    const drawWrappedBlock = (text, x, y, maxWidth, lineHeight) => {
+      const words = String(text).split(/\s+/);
+      let line = "";
+      let lines = 0;
+      for (let i = 0; i < words.length; i++){
+        const test = line ? `${line} ${words[i]}` : words[i];
+        if (ctx.measureText(test).width > maxWidth && line){
+          ctx.fillText(line, x, y + lines * lineHeight);
+          line = words[i];
+          lines++;
+        } else {
+          line = test;
+        }
+      }
+      if (line){
+        ctx.fillText(line, x, y + lines * lineHeight);
+        lines++;
+      }
+      return lines;
+    };
 
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,0.88)";
     ctx.fillRect(0, 0, W, H);
 
-    const pw = Math.min(760, Math.floor(W * 0.90));
-    const ph = clamp(Math.floor(H * 0.56), 330, 460);
+    const pw = Math.min(compact ? 760 : 760, Math.floor(W * (compact ? 0.92 : 0.90)));
+    const ph = clamp(Math.floor(H * (compact ? 0.62 : 0.56)), compact ? 360 : 330, compact ? 520 : 460);
     const px = Math.floor(W/2 - pw/2);
     const py = Math.floor(H/2 - ph/2);
+    const innerPad = compact ? 22 : 34;
+    const bodyX = px + innerPad;
+    const bodyW = pw - innerPad * 2;
+    const titleFont = compact ? 27 : 32;
+    const subtitleFont = compact ? 13 : 15;
+    const bodyFont = compact ? 12 : 14;
+    const titleY = py + (compact ? 46 : 52);
+    const subtitleY = py + (compact ? 78 : 84);
+    const tipsTop = py + (compact ? 112 : 126);
+    const lineHeight = compact ? 20 : 22;
+    const tipGap = compact ? 9 : 12;
+    const ctaY = py + ph - (compact ? 28 : 34);
     drawPanel(px, py, pw, ph);
 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = COL_NEON;
-    ctx.font = "800 32px ui-monospace, Menlo, Consolas, monospace";
+    ctx.font = `800 ${titleFont}px ui-monospace, Menlo, Consolas, monospace`;
     ctx.shadowColor = "rgba(0,228,102,0.78)";
     ctx.shadowBlur = 16;
-    ctx.fillText(tutorial.title, W/2, py + 52);
+    ctx.fillText(tutorial.title, W/2, titleY);
 
     ctx.shadowBlur = 0;
     ctx.fillStyle = "rgba(175,255,214,0.92)";
-    ctx.font = "700 15px ui-monospace, Menlo, Consolas, monospace";
-    ctx.fillText(tutorial.subtitle, W/2, py + 84);
+    ctx.font = `700 ${subtitleFont}px ui-monospace, Menlo, Consolas, monospace`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    const subtitleLines = drawWrappedBlock(tutorial.subtitle, bodyX, subtitleY, bodyW, lineHeight);
 
     ctx.fillStyle = "rgba(217,255,239,0.90)";
-    ctx.font = "14px ui-monospace, Menlo, Consolas, monospace";
-    let y = py + 126;
+    ctx.font = `${bodyFont}px ui-monospace, Menlo, Consolas, monospace`;
+    let y = Math.max(tipsTop, subtitleY + subtitleLines * lineHeight + 14);
     for (const tip of tutorial.tips){
-      ctx.fillText(tip, W/2, y);
-      y += 34;
+      const lineCount = drawWrappedBlock(tip, bodyX, y, bodyW, lineHeight);
+      y += lineCount * lineHeight + tipGap;
     }
 
     ctx.fillStyle = "rgba(0,255,152,0.94)";
-    ctx.font = "700 16px ui-monospace, Menlo, Consolas, monospace";
+    ctx.font = `700 ${compact ? 14 : 16}px ui-monospace, Menlo, Consolas, monospace`;
     ctx.shadowColor = "rgba(0,228,102,0.70)";
     ctx.shadowBlur = 10;
-    ctx.fillText("CLICK OR TAP TO CONTINUE", W/2, py + ph - 34);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(compact ? "TAP TO CONTINUE" : "CLICK OR TAP TO CONTINUE", W/2, ctaY);
     ctx.restore();
   }
   function drawRotateDeviceOverlay(){
