@@ -4750,7 +4750,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const { panelW, panelH, px, py, pad, viewX, viewY, viewW, viewH } = getSetupLayout();
     const compact = isSetupCompactLayout();
 
-    let y = viewY - setupScrollY;
+    let y = viewY + (compact ? 6 : 0) - setupScrollY;
     function section(label){
       setupSectionHeaders.push({ label, y });
       y += compact ? 14 : 18;
@@ -4758,9 +4758,10 @@ function lerp(a, b, t){ return a + (b - a) * t; }
 
     function row(btns, cols=btns.length){
       const gap = compact ? 8 : 12;
-      const bw = (viewW - gap*(cols-1)) / cols;
+      const rowInset = compact ? 6 : 0;
+      const bw = (viewW - rowInset * 2 - gap*(cols-1)) / cols;
       const bh = compact ? 38 : 46;
-      let x = viewX;
+      let x = viewX + rowInset;
       for (const b of btns){
         addButton(b.id, x, y, bw, bh, b.label, b.onClick, b.enabled!==false, b.selected===true);
         x += bw + gap;
@@ -4808,14 +4809,15 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     ], 3);
 
     y += compact ? 1 : 4;
-    section("MODIFIERS");
-
-    // SERIES
+    section("ROUND");
     row([
-      { id:"ser_bo3", label:"BEST OF 3", onClick:()=>{ config.series="BO3"; buildSetupUI(); beep(480,0.03,"triangle",0.03); }, enabled:true, selected:(config.series==="BO3") },
-      { id:"ser_bo6", label:"BEST OF 6", onClick:()=>{ config.series="BO6"; buildSetupUI(); beep(480,0.03,"triangle",0.03); }, enabled:true, selected:(config.series==="BO6") },
-      { id:"ser_bo9", label:"BEST OF 9", onClick:()=>{ config.series="BO9"; buildSetupUI(); beep(480,0.03,"triangle",0.03); }, enabled:true, selected:(config.series==="BO9") }
+      { id:"ser_bo3", label:"3", onClick:()=>{ config.series="BO3"; buildSetupUI(); beep(480,0.03,"triangle",0.03); }, enabled:true, selected:(config.series==="BO3") },
+      { id:"ser_bo6", label:"6", onClick:()=>{ config.series="BO6"; buildSetupUI(); beep(480,0.03,"triangle",0.03); }, enabled:true, selected:(config.series==="BO6") },
+      { id:"ser_bo9", label:"9", onClick:()=>{ config.series="BO9"; buildSetupUI(); beep(480,0.03,"triangle",0.03); }, enabled:true, selected:(config.series==="BO9") }
     ]);
+
+    y += compact ? 1 : 4;
+    section("MODIFIERS");
 
     // SPEED
     row([
