@@ -22,7 +22,7 @@
       height: 100vh;
       width: 100dvw;
       height: 100dvh;
-      image-rendering: pixelated;
+      image-rendering: auto;
       cursor: crosshair;
       touch-action: none;
     }
@@ -92,7 +92,7 @@
     // Firefox struggles with full-frame blur/filter passes in this game.
     bloomEnabled: !IS_FIREFOX,
     lowFx: IS_FIREFOX,
-    dprCap: IS_FIREFOX ? 1 : 2,
+    dprCap: IS_FIREFOX ? 1 : ((navigator.maxTouchPoints || 0) > 0 ? 3 : 2),
     gridHoriz: IS_FIREFOX ? 20 : 28,
     gridVert: IS_FIREFOX ? 16 : 24
   };
@@ -780,7 +780,9 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   let transition = { active:false, t:0, dur:260, from:State.MENU, to:State.MENU };
   function goTo(newState){
     if (transition.active) return;
-    if (newState === State.CREDITS){
+    if (newState === State.SETUP){
+      setupScrollY = 0;
+    } else if (newState === State.CREDITS){
       creditsScrollY = 0;
     } else if (newState === State.HELP){
       helpScrollY = 0;
@@ -6888,7 +6890,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
 
     for (const b of getActiveButtons()) drawButton(b, mx, my);
 
-    drawFooterHint("ESC TO GO BACK");
+    if (!hasCoarsePointer()) drawFooterHint("ESC TO GO BACK");
     input.justUp = false;
     input.justDown = false;
   }
@@ -6916,7 +6918,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     const mx = input.x, my = input.y;
     for (const b of getActiveButtons()) drawButton(b, mx, my);
 
-    drawFooterHint("ESC TO GO BACK");
+    if (!hasCoarsePointer()) drawFooterHint("ESC TO GO BACK");
   }
   function drawHelp(t){
     drawNeonGrid(t);
@@ -7061,12 +7063,14 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
 const mx = input.x, my = input.y;
     for (const b of getActiveButtons()) drawButton(b, mx, my);
 
-    ctx.save();
-    ctx.fillStyle = "rgba(0,228,102,0.60)";
-    ctx.font = `12px ${FONT}`;
-    ctx.textAlign = "center";
-    ctx.fillText("ESC TO RESUME", W/2, py + panelH - 22);
-    ctx.restore();
+    if (!hasCoarsePointer()){
+      ctx.save();
+      ctx.fillStyle = "rgba(0,228,102,0.60)";
+      ctx.font = `12px ${FONT}`;
+      ctx.textAlign = "center";
+      ctx.fillText("ESC TO RESUME", W/2, py + panelH - 22);
+      ctx.restore();
+    }
   }
 
   function drawWin(t){
