@@ -6611,7 +6611,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
   function drawSetup(t){
     drawNeonGrid(t);
     const { panelW, panelH, px, py, viewX, viewY, viewW, viewH } = getSetupLayout();
-    drawTitle(isSetupCompactLayout() ? Math.max(56, py - 28) : Math.max(92, py - 72), "CUSTOM GAME");
+    drawTitle(isSetupCompactLayout() ? Math.max(34, py - 34) : Math.max(92, py - 72), "CUSTOM GAME");
 
     drawPanel(px, py, panelW, panelH);
 
@@ -7025,24 +7025,36 @@ const mx = input.x, my = input.y;
   function drawWin(t){
     drawNeonGrid(t);
 
-    ctx.save();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = "800 52px ui-monospace, Menlo, Consolas, monospace";
-    ctx.shadowColor = "rgba(0,228,102,0.8)";
-    ctx.shadowBlur = 20;
-
     const sideLabel = isTwoPlayerMode() ? "PLAYER 2" : "AI";
     const winnerKey = game.seriesOver ? game.seriesWinner : game.winner;
     const msg = (winnerKey === "player") ? "PLAYER 1 WINS" : `${sideLabel} WINS`;
+    const sideScoreLabel = isTwoPlayerMode() ? "P2" : "AI";
+    const compact = isShortViewport();
+    const titleW = Math.min(540, Math.floor(W * 0.54));
+    const titleH = compact ? 74 : 86;
+    const scoreW = Math.min(420, Math.floor(W * 0.42));
+    const scoreH = compact ? 50 : 58;
+    const titleX = Math.floor(W/2 - titleW/2);
+    const titleY = Math.floor(H * (compact ? 0.22 : 0.24));
+    const scoreX = Math.floor(W/2 - scoreW/2);
+    const scoreY = titleY + titleH + 16;
+
+    ctx.save();
+    drawPanel(titleX, titleY, titleW, titleH);
+    drawPanel(scoreX, scoreY, scoreW, scoreH);
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,228,102,0.8)";
+    ctx.shadowBlur = 18;
     ctx.fillStyle = COL_NEON;
-    ctx.fillText(msg, W/2, Math.floor(H*0.32));
+    ctx.font = `${compact ? 700 : 800} ${compact ? 38 : 46}px ui-monospace, Menlo, Consolas, monospace`;
+    ctx.fillText(msg, W/2, titleY + titleH * 0.52);
 
     ctx.shadowBlur = 0;
-    const sideScoreLabel = isTwoPlayerMode() ? "P2" : "AI";
-    ctx.font = "18px ui-monospace, Menlo, Consolas, monospace";
-    ctx.fillStyle = "rgba(217,255,239,0.7)";
-    ctx.fillText(`P1 ${game.playerWins} / ${game.aiWins} ${sideScoreLabel}`, W/2, Math.floor(H*0.32) + 56);
+    ctx.fillStyle = "rgba(217,255,239,0.84)";
+    ctx.font = `${compact ? 16 : 18}px ui-monospace, Menlo, Consolas, monospace`;
+    ctx.fillText(`P1 ${game.playerWins} / ${game.aiWins} ${sideScoreLabel}`, W/2, scoreY + scoreH * 0.5);
     ctx.restore();
 
     if (ui.buttons.length === 0) buildWinUI();
