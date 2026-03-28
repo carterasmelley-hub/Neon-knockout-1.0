@@ -372,6 +372,9 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   function isPhoneViewport(){
     return hasCoarsePointer() && (Math.min(W, H) <= 560 || (W <= 980 && H <= 560));
   }
+  function isPhoneLandscapeViewport(){
+    return isPhoneViewport() && W > H;
+  }
   function isMobileCompactLayout(){
     return isPhoneViewport();
   }
@@ -487,11 +490,13 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     settings.sound = settings.soundVolume > 0.001;
     saveSettingsPrefs(settings.soundVolume, settings.musicVolume, settings.devMode);
     if (settings.sound) ensureAudio();
+    refreshAudioLevels();
   }
   function setMusicVolume(value, userGesture=false){
     settings.musicVolume = clamp(value, 0, 1);
     settings.music = settings.musicVolume > 0.001;
     saveSettingsPrefs(settings.soundVolume, settings.musicVolume, settings.devMode);
+    refreshAudioLevels();
     applyMusicState(userGesture);
   }
   function setDevModeEnabled(enabled){
@@ -570,23 +575,50 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   const MUSIC_TRACK_SRC = "arcade-ride-vens-adams-main-version-27955-01-45.mp3";
   let audioCtx = null;
   let bgMusicEl = null;
+  let sfxMasterGain = null;
   const sfxCooldowns = Object.create(null);
+  function sfxVolumeScalar(){
+    const v = clamp(settings.soundVolume, 0, 1);
+    return v <= 0.001 ? 0 : Math.pow(v, 1.35);
+  }
+  function musicVolumeScalar(){
+    const v = clamp(settings.musicVolume, 0, 1);
+    return v <= 0.001 ? 0 : Math.pow(v, 1.15);
+  }
   function ensureAudio(){
     if (!settings.sound || settings.soundVolume <= 0.001) return null;
     if (!audioCtx){
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
       audioCtx = new AC();
+      sfxMasterGain = audioCtx.createGain();
+      sfxMasterGain.gain.setValueAtTime(sfxVolumeScalar(), audioCtx.currentTime);
+      sfxMasterGain.connect(audioCtx.destination);
+    } else if (!sfxMasterGain){
+      sfxMasterGain = audioCtx.createGain();
+      sfxMasterGain.gain.setValueAtTime(sfxVolumeScalar(), audioCtx.currentTime);
+      sfxMasterGain.connect(audioCtx.destination);
     }
     if (audioCtx.state === "suspended") audioCtx.resume().catch(()=>{});
     return audioCtx;
+  }
+  function refreshAudioLevels(){
+    if (audioCtx && sfxMasterGain){
+      const t0 = audioCtx.currentTime;
+      sfxMasterGain.gain.cancelScheduledValues(t0);
+      sfxMasterGain.gain.setValueAtTime(sfxMasterGain.gain.value, t0);
+      sfxMasterGain.gain.linearRampToValueAtTime(sfxVolumeScalar(), t0 + 0.04);
+    }
+    if (bgMusicEl){
+      bgMusicEl.volume = 0.72 * musicVolumeScalar();
+    }
   }
   function ensureMusicEl(){
     if (bgMusicEl) return bgMusicEl;
     try{
       const a = new Audio(MUSIC_TRACK_SRC);
       a.loop = true;
-      a.volume = 0.34 * clamp(settings.musicVolume, 0, 1);
+      a.volume = 0.72 * musicVolumeScalar();
       a.preload = "auto";
       bgMusicEl = a;
     } catch (_){
@@ -597,7 +629,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   function applyMusicState(userGesture=false){
     const m = ensureMusicEl();
     if (!m) return;
-    m.volume = 0.34 * clamp(settings.musicVolume, 0, 1);
+    m.volume = 0.72 * musicVolumeScalar();
     if (!settings.music || settings.musicVolume <= 0.001 || document.hidden){
       m.pause();
       return;
@@ -621,10 +653,10 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     o.type = type;
     o.frequency.setValueAtTime(freq, t0);
     g.gain.setValueAtTime(0, t0);
-    g.gain.linearRampToValueAtTime(gain * settings.soundVolume, t0 + 0.005);
+    g.gain.linearRampToValueAtTime(gain, t0 + 0.005);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     o.connect(g);
-    g.connect(ac.destination);
+    g.connect(sfxMasterGain || ac.destination);
     o.start(t0);
     o.stop(t0 + dur + 0.02);
   }
@@ -639,10 +671,10 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     o.frequency.setValueAtTime(freq, t0);
     if (endFreq != null) o.frequency.exponentialRampToValueAtTime(Math.max(24, endFreq), t0 + dur);
     g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(Math.max(0.0001, gain * settings.soundVolume), t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0001, gain), t0 + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     o.connect(g);
-    g.connect(ac.destination);
+    g.connect(sfxMasterGain || ac.destination);
     o.start(t0);
     o.stop(t0 + dur + 0.03);
   }
@@ -665,12 +697,12 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     lpNode.frequency.setValueAtTime(lp, t0);
     const g = ac.createGain();
     g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(Math.max(0.0001, gain * settings.soundVolume), t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0001, gain), t0 + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     src.connect(hpNode);
     hpNode.connect(lpNode);
     lpNode.connect(g);
-    g.connect(ac.destination);
+    g.connect(sfxMasterGain || ac.destination);
     src.start(t0);
     src.stop(t0 + dur + 0.02);
   }
@@ -1632,10 +1664,11 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const minDim = Math.min(W, H);
     const scaleByMin = minDim / 820;
     const compact = isPhoneViewport() || isShortViewport();
-    const scaleByW = (W - (compact ? 32 : 72)) / 820;
-    const hudReserve = compact ? 118 : isMobileCompactLayout() ? 170 : 230;
+    const phoneLandscape = isPhoneLandscapeViewport();
+    const scaleByW = (W - (compact ? 28 : 72)) / 820;
+    const hudReserve = phoneLandscape ? 156 : compact ? 118 : isMobileCompactLayout() ? 170 : 230;
     const scaleByH = (H - hudReserve) / 520; // leave room for HUD + buttons
-    return clamp(Math.min(scaleByMin, scaleByW, scaleByH), compact ? 0.48 : isMobileCompactLayout() ? 0.52 : 0.58, 1.2);
+    return clamp(Math.min(scaleByMin, scaleByW, scaleByH), phoneLandscape ? 0.42 : compact ? 0.48 : isMobileCompactLayout() ? 0.52 : 0.58, 1.2);
   }
   function getArenaLayout(scale=computeArenaScale()){
     const footballMode = isFootballMode();
@@ -1643,14 +1676,15 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const fieldMode = footballMode || hockeyMode;
     const circleStage = (!fieldMode && config.stage === "CIRCLE");
     const compact = isPhoneViewport() || isShortViewport();
+    const phoneLandscape = isPhoneLandscapeViewport();
     const plat = { x:0, y:0, w:0, h:0, cx:0, cy:0, radius:0, shape:"rect" };
 
     if (fieldMode){
       // Wide field-sport arena (east-west).
-      plat.w = Math.floor(clamp(W * (compact ? 0.96 : 0.92), compact ? 420 : 520, W - (compact ? 20 : 44)));
-      plat.h = Math.floor(clamp(H * (compact ? 0.42 : 0.46), compact ? 180 : 230, Math.min(compact ? 330 : 430, H - (compact ? 120 : 210))));
+      plat.w = Math.floor(clamp(W * (phoneLandscape ? 0.97 : compact ? 0.96 : 0.92), compact ? 420 : 520, W - (compact ? 18 : 44)));
+      plat.h = Math.floor(clamp(H * (phoneLandscape ? 0.36 : compact ? 0.42 : 0.46), phoneLandscape ? 150 : compact ? 180 : 230, Math.min(phoneLandscape ? 250 : compact ? 330 : 430, H - (phoneLandscape ? 110 : compact ? 120 : 210))));
       plat.x = Math.floor(W/2 - plat.w/2);
-      plat.y = Math.floor(H/2 - plat.h/2 + (compact ? 10 : 26));
+      plat.y = Math.floor(H/2 - plat.h/2 + (phoneLandscape ? 2 : compact ? 10 : 26));
       plat.cx = plat.x + plat.w/2;
       plat.cy = plat.y + plat.h/2;
       plat.radius = 0;
@@ -1660,7 +1694,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       plat.w = diam;
       plat.h = diam;
       plat.x = Math.floor(W/2 - diam/2);
-      plat.y = Math.floor(H/2 - diam/2 + (compact ? 0 : 10));
+      plat.y = Math.floor(H/2 - diam/2 + (phoneLandscape ? -6 : compact ? 0 : 10));
       plat.cx = plat.x + diam/2;
       plat.cy = plat.y + diam/2;
       plat.radius = diam/2;
@@ -1669,7 +1703,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       plat.w = Math.floor(820 * scale);
       plat.h = Math.floor(520 * scale);
       plat.x = Math.floor(W/2 - plat.w/2);
-      plat.y = Math.floor(H/2 - plat.h/2 + (compact ? 8 : 30));
+      plat.y = Math.floor(H/2 - plat.h/2 + (phoneLandscape ? 0 : compact ? 8 : 30));
       plat.cx = plat.x + plat.w/2;
       plat.cy = plat.y + plat.h/2;
       plat.radius = 0;
@@ -4596,14 +4630,14 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     return { panelW, panelH, px, py, pad, viewX, viewY, viewW, viewH };
   }
   function getSettingsLayout(){
-    if (isMobileCompactLayout()){
+    if (isMobileCompactLayout() || isShortViewport()){
       const panelW = Math.min(740, Math.floor(W * 0.94));
-      const panelH = Math.max(250, H - 108);
+      const panelH = Math.max(250, H - (isPhoneLandscapeViewport() ? 78 : 108));
       const px = Math.floor(W/2 - panelW/2);
-      const py = Math.max(78, Math.floor(H * 0.16));
+      const py = Math.max(isPhoneLandscapeViewport() ? 52 : 78, Math.floor(H * (isPhoneLandscapeViewport() ? 0.08 : 0.16)));
       const pad = 18;
       const headerH = 30;
-      const footerH = 18;
+      const footerH = isPhoneLandscapeViewport() ? 78 : 28;
       const viewX = px + pad;
       const viewY = py + headerH;
       const viewW = panelW - pad*2 - 8;
@@ -4760,13 +4794,14 @@ function lerp(a, b, t){ return a + (b - a) * t; }
 
   function buildSettingsUI(){
     ui.buttons = [];
+    const compact = isMobileCompactLayout() || isShortViewport();
     const { py, panelH, viewW } = getSettingsLayout();
-    const bh = 50;
-    const gap = 14;
+    const bh = compact ? 44 : 50;
+    const gap = compact ? 10 : 14;
     const footerW = Math.min(viewW, 620);
     const bw = Math.floor((footerW - gap) / 2);
     const bx = Math.floor(W/2 - footerW/2);
-    const by = Math.floor(Math.min(H - bh - 34, py + panelH + 24));
+    const by = Math.floor(py + panelH - bh - (compact ? 14 : 18));
     addButton("settings_back", bx, by, bw, bh, "BACK", () => {
       helpBackState = null;
       if (settingsBackState === State.PAUSE){ state = State.PAUSE; ui.buttons = []; /* keep paused */ }
@@ -5951,10 +5986,11 @@ for (let i = 0; i < all.length; i++){
     const p1Pal = getTeamPalette(1);
     const p2Pal = getTeamPalette(2);
     const compact = isPhoneViewport() || isShortViewport();
-    const bw = Math.floor(clamp(p.w * (compact ? 0.70 : 0.62), compact ? 280 : 340, compact ? 520 : 620));
-    const bh = compact ? 42 : 48;
+    const phoneLandscape = isPhoneLandscapeViewport();
+    const bw = Math.floor(clamp(p.w * (phoneLandscape ? 0.64 : compact ? 0.70 : 0.62), compact ? 280 : 340, compact ? 520 : 620));
+    const bh = phoneLandscape ? 36 : compact ? 42 : 48;
     const bx = Math.floor(W/2 - bw/2);
-    const by = Math.floor(Math.max(compact ? 48 : 66, p.y - bh - (compact ? 12 : 20)));
+    const by = Math.floor(Math.max(phoneLandscape ? 30 : compact ? 48 : 66, p.y - bh - (phoneLandscape ? 8 : compact ? 12 : 20)));
     const lx = Math.floor(bx + bw * 0.22);
     const rx = Math.floor(bx + bw * 0.78);
     const cx = Math.floor(bx + bw * 0.50);
@@ -5972,7 +6008,7 @@ for (let i = 0; i < all.length; i++){
 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `${compact ? 9 : 10}px ui-monospace, Menlo, Consolas, monospace`;
+    ctx.font = `${phoneLandscape ? 8 : compact ? 9 : 10}px ui-monospace, Menlo, Consolas, monospace`;
     ctx.fillStyle = p1Pal.marker;
     ctx.fillText("P1", lx, by + 10);
     ctx.fillStyle = p2Pal.marker;
@@ -5984,18 +6020,18 @@ for (let i = 0; i < all.length; i++){
     const roundText = `ROUND ${clamp(game.match, 1, meta.bestOf)}/${meta.bestOf}`;
 
     ctx.fillStyle = "rgba(246,255,250,0.96)";
-    ctx.font = `${compact ? 19 : 23}px ui-monospace, Menlo, Consolas, monospace`;
+    ctx.font = `${phoneLandscape ? 17 : compact ? 19 : 23}px ui-monospace, Menlo, Consolas, monospace`;
     ctx.fillText(String(leftScore), lx, by + 29);
     ctx.fillText(String(rightScore), rx, by + 29);
 
     ctx.fillStyle = "rgba(0,228,102,0.88)";
-    ctx.font = `${compact ? 10 : 11}px ui-monospace, Menlo, Consolas, monospace`;
+    ctx.font = `${phoneLandscape ? 9 : compact ? 10 : 11}px ui-monospace, Menlo, Consolas, monospace`;
     if (isKeepAwayMode()){
       const ka = game.keepAway;
       const holderLabel = ka.streakTeam === 1 ? "P1" : (ka.streakTeam === 2 ? sideLabel : "NONE");
       ctx.fillText(`KEEP AWAY ${ka.streakCount}/${ka.targetStreak}`, cx, by + 11);
       ctx.fillStyle = "rgba(217,255,239,0.78)";
-      ctx.font = `${compact ? 9 : 10}px ui-monospace, Menlo, Consolas, monospace`;
+      ctx.font = `${phoneLandscape ? 8 : compact ? 9 : 10}px ui-monospace, Menlo, Consolas, monospace`;
       ctx.fillText(`HOLDER ${holderLabel}  ${clamp(game.match, 1, meta.bestOf)}/${meta.bestOf}`, cx, by + 30);
     } else {
       ctx.fillText(roundText, cx, by + 11);
@@ -6324,13 +6360,14 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     ui.buttons = [];
 
     const compact = isPhoneViewport() || isShortViewport();
+    const phoneLandscape = isPhoneLandscapeViewport();
     const gap = compact ? 8 : 12;
     const totalW = Math.min(Math.floor(W * (compact ? 0.94 : 0.88)), Math.floor(game.platform.w * (compact ? 0.96 : 0.92)));
-    const pauseW = clamp(Math.floor(totalW * (compact ? 0.20 : 0.22)), compact ? 82 : 110, compact ? 124 : 170);
+    const pauseW = clamp(Math.floor(totalW * (compact ? 0.20 : 0.22)), compact ? 74 : 110, compact ? 116 : 170);
     const bw = Math.floor((totalW - pauseW - gap*2) / 2);
-    const bh = compact ? 36 : 44;
+    const bh = phoneLandscape ? 32 : compact ? 36 : 44;
     const x = Math.floor(W/2 - totalW/2);
-    const y = Math.floor(game.platform.y + game.platform.h + (compact ? 12 : 22));
+    const y = Math.floor(game.platform.y + game.platform.h + (phoneLandscape ? 8 : compact ? 12 : 22));
 
     addButton("primary", x, y, bw, bh, "START", () => {
       if (isSinglePlayerMode()){
@@ -6704,9 +6741,10 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     drawTitle(isShortViewport() ? Math.max(56, py - 28) : Math.floor(H * 0.18), "SETTINGS");
     drawPanel(px, py, panelW, panelH);
     settingsScrollY = clamp(settingsScrollY, 0, settingsScrollMax);
+    const compact = isMobileCompactLayout() || isShortViewport();
 
     const rowX = viewX;
-    let rowY = viewY + 186 - settingsScrollY;
+    let rowY = viewY + (compact ? 176 : 186) - settingsScrollY;
     let soundSlider = null;
     let musicSlider = null;
     let devToggle = null;
@@ -6741,11 +6779,11 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
 
       let y = yStart + 22;
       const cols = 3;
-      const chipGap = 12;
+      const chipGap = compact ? 10 : 12;
       const gridW = Math.min(viewW - 6, 654);
       const gridX = Math.floor(viewX + (viewW - gridW) * 0.5);
       const cellW = Math.floor((gridW - chipGap * (cols - 1)) / cols);
-      const cellH = 42;
+      const cellH = compact ? 40 : 42;
 
       for (let i = 0; i < TEAM_COLOR_ORDER.length; i++){
         const key = TEAM_COLOR_ORDER[i];
@@ -6753,7 +6791,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
         const col = i % cols;
         const row = Math.floor(i / cols);
         const x = gridX + col * (cellW + chipGap);
-        const yy = y + row * (cellH + 10);
+        const yy = y + row * (cellH + (compact ? 8 : 10));
         const selected = (team === 1) ? settings.playerColor === key : settings.enemyColor === key;
         const locked = (team === 1) ? settings.enemyColor === key : settings.playerColor === key;
         const rect = drawColorChoiceChip(x, yy, cellW, cellH, preset, selected, locked);
@@ -6762,8 +6800,8 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
         }
       }
 
-      y += Math.ceil(TEAM_COLOR_ORDER.length / cols) * (cellH + 10);
-      return y + 10;
+      y += Math.ceil(TEAM_COLOR_ORDER.length / cols) * (cellH + (compact ? 8 : 10));
+      return y + (team === 2 ? (compact ? 34 : 24) : 10);
     };
 
     const mx = input.x, my = input.y;
@@ -6779,7 +6817,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     rowY = drawColorSection("PLAYER TWO", 2, rowY);
     ctx.restore();
 
-    const contentBottom = rowY + settingsScrollY + 8;
+    const contentBottom = rowY + settingsScrollY + (compact ? 18 : 8);
     settingsScrollMax = Math.max(0, contentBottom - (viewY + viewH));
     settingsScrollY = clamp(settingsScrollY, 0, settingsScrollMax);
 
