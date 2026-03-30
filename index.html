@@ -288,7 +288,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   function loadSettingsPrefs(){
     try{
       const raw = localStorage.getItem(SETTINGS_PREFS_KEY);
-      if (!raw) return { sound: true, music: true, soundVolume: 0.82, musicVolume: 0.72, devMode: false };
+      if (!raw) return { sound: true, music: true, soundVolume: 0.82, musicVolume: 0.72 };
       const parsed = JSON.parse(raw);
       const parsedSoundVolume = typeof parsed?.soundVolume === "number" ? clamp(parsed.soundVolume, 0, 1) : (parsed?.sound === false ? 0 : 0.82);
       const parsedMusicVolume = typeof parsed?.musicVolume === "number" ? clamp(parsed.musicVolume, 0, 1) : (parsed?.music === false ? 0 : 0.72);
@@ -296,14 +296,13 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         sound: parsedSoundVolume > 0.001,
         music: parsedMusicVolume > 0.001,
         soundVolume: parsedSoundVolume,
-        musicVolume: parsedMusicVolume,
-        devMode: parsed?.devMode === true
+        musicVolume: parsedMusicVolume
       };
     } catch (_){
-      return { sound: true, music: true, soundVolume: 0.82, musicVolume: 0.72, devMode: false };
+      return { sound: true, music: true, soundVolume: 0.82, musicVolume: 0.72 };
     }
   }
-  function saveSettingsPrefs(soundVolume, musicVolume, devMode){
+  function saveSettingsPrefs(soundVolume, musicVolume){
     const sfx = clamp(soundVolume ?? 0.82, 0, 1);
     const music = clamp(musicVolume ?? 0.72, 0, 1);
     try{
@@ -311,8 +310,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         sound: sfx > 0.001,
         music: music > 0.001,
         soundVolume: sfx,
-        musicVolume: music,
-        devMode: devMode === true
+        musicVolume: music
       }));
     } catch (_) {}
   }
@@ -370,7 +368,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     }
   }
   function isPhoneViewport(){
-    return hasCoarsePointer() && (Math.min(W, H) <= 560 || (W <= 980 && H <= 560));
+    return Math.min(W, H) <= 560 || (W <= 980 && H <= 560);
   }
   function isPhoneLandscapeViewport(){
     return isPhoneViewport() && W > H;
@@ -400,6 +398,8 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   }
   window.addEventListener("resize", resize, { passive: true });
+  window.visualViewport?.addEventListener("resize", resize, { passive: true });
+  window.visualViewport?.addEventListener("scroll", resize, { passive: true });
   resize();
 
   // ============================================================
@@ -412,7 +412,6 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     music: loadedSettings.music,
     soundVolume: loadedSettings.soundVolume,
     musicVolume: loadedSettings.musicVolume,
-    devMode: loadedSettings.devMode === true,
     playerColor: loadedTeamColors.player,
     enemyColor: loadedTeamColors.enemy
   };
@@ -488,20 +487,16 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   function setSoundVolume(value){
     settings.soundVolume = clamp(value, 0, 1);
     settings.sound = settings.soundVolume > 0.001;
-    saveSettingsPrefs(settings.soundVolume, settings.musicVolume, settings.devMode);
+    saveSettingsPrefs(settings.soundVolume, settings.musicVolume);
     if (settings.sound) ensureAudio();
     refreshAudioLevels();
   }
   function setMusicVolume(value, userGesture=false){
     settings.musicVolume = clamp(value, 0, 1);
     settings.music = settings.musicVolume > 0.001;
-    saveSettingsPrefs(settings.soundVolume, settings.musicVolume, settings.devMode);
+    saveSettingsPrefs(settings.soundVolume, settings.musicVolume);
     refreshAudioLevels();
     applyMusicState(userGesture);
-  }
-  function setDevModeEnabled(enabled){
-    settings.devMode = !!enabled;
-    saveSettingsPrefs(settings.soundVolume, settings.musicVolume, settings.devMode);
   }
   function getTeamPalette(team){
     const key = (team === 1) ? settings.playerColor : settings.enemyColor;
@@ -893,8 +888,16 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     ctx.stroke();
 
     ctx.fillStyle = hovered ? COL_NEON : COL_TEXT;
-    const btnFont = (String(b.label).length > 12) ? "600 15px ui-monospace, Menlo, Consolas, monospace" : "600 18px ui-monospace, Menlo, Consolas, monospace";
-    ctx.font = btnFont;
+    const label = String(b.label || "");
+    let fontPx = 18;
+    if (b.w <= 190 || label.length > 10) fontPx = 16;
+    if (b.w <= 150 || label.length > 12) fontPx = 14;
+    if (b.w <= 120 || label.length > 14) fontPx = 12;
+    if (b.w <= 96 || label.length > 16) fontPx = 10;
+    if (isPhoneViewport()){
+      fontPx = Math.min(fontPx, label.length > 10 ? 11 : 13);
+    }
+    ctx.font = `600 ${fontPx}px ui-monospace, Menlo, Consolas, monospace`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     const dy = pressed ? 1.5 : 0;
@@ -1576,49 +1579,49 @@ function lerp(a, b, t){ return a + (b - a) * t; }
 
 
   const PHYS = {
-    friction: 0.9820,
+    friction: 0.9755,
     minSpeed: 0.04,
-    maxMoveSpeed: 15.8
+    maxMoveSpeed: 15.2
   };
   const PHYS_MODIFIERS = Object.freeze({
     STANDARD: Object.freeze({
       friction: PHYS.friction,
       minSpeed: PHYS.minSpeed,
       maxMoveSpeed: PHYS.maxMoveSpeed,
-      unitRestitution: 0.92,
-      tangentFriction: 0.20,
-      bumperRestitution: 0.85,
-      wallRestitution: 0.35,
+      unitRestitution: 0.80,
+      tangentFriction: 0.28,
+      bumperRestitution: 0.72,
+      wallRestitution: 0.24,
       wallTangentialDamp: 0.06
     }),
     ICE: Object.freeze({
-      friction: 0.9885,
+      friction: 0.9815,
       minSpeed: 0.03,
       maxMoveSpeed: PHYS.maxMoveSpeed,
-      unitRestitution: 0.93,
-      tangentFriction: 0.16,
-      bumperRestitution: 0.88,
-      wallRestitution: 0.38,
+      unitRestitution: 0.84,
+      tangentFriction: 0.24,
+      bumperRestitution: 0.78,
+      wallRestitution: 0.30,
       wallTangentialDamp: 0.05
     }),
     HEAVY: Object.freeze({
-      friction: 0.9795,
+      friction: 0.9735,
       minSpeed: 0.05,
       maxMoveSpeed: PHYS.maxMoveSpeed * 0.97,
-      unitRestitution: 0.68,
-      tangentFriction: 0.30,
-      bumperRestitution: 0.58,
-      wallRestitution: 0.22,
+      unitRestitution: 0.58,
+      tangentFriction: 0.34,
+      bumperRestitution: 0.48,
+      wallRestitution: 0.18,
       wallTangentialDamp: 0.10
     }),
     BOUNCY: Object.freeze({
-      friction: 0.9830,
+      friction: 0.9770,
       minSpeed: 0.038,
       maxMoveSpeed: PHYS.maxMoveSpeed * 1.03,
-      unitRestitution: 1.01,
-      tangentFriction: 0.12,
-      bumperRestitution: 1.08,
-      wallRestitution: 0.52,
+      unitRestitution: 0.90,
+      tangentFriction: 0.18,
+      bumperRestitution: 0.96,
+      wallRestitution: 0.40,
       wallTangentialDamp: 0.03
     })
   });
@@ -1693,28 +1696,48 @@ function lerp(a, b, t){ return a + (b - a) * t; }
   function computeArenaScale(){
     const minDim = Math.min(W, H);
     const scaleByMin = minDim / 820;
-    const compact = isPhoneViewport() || isShortViewport();
+    const phoneCompact = isPhoneViewport();
+    const compact = phoneCompact || isShortViewport();
     const phoneLandscape = isPhoneLandscapeViewport();
-    const scaleByW = (W - (compact ? 28 : 72)) / 820;
-    const hudReserve = phoneLandscape ? 172 : compact ? 118 : isMobileCompactLayout() ? 170 : 230;
+    const portraitCompact = phoneCompact && !phoneLandscape;
+    const scaleByW = (W - (portraitCompact ? 44 : compact ? 28 : 72)) / 820;
+    const hudReserve = phoneLandscape ? 172 : portraitCompact ? 148 : compact ? 118 : isMobileCompactLayout() ? 170 : 230;
     const scaleByH = (H - hudReserve) / 520; // leave room for HUD + buttons
-    return clamp(Math.min(scaleByMin, scaleByW, scaleByH), phoneLandscape ? 0.42 : compact ? 0.48 : isMobileCompactLayout() ? 0.52 : 0.58, 1.2);
+    return clamp(Math.min(scaleByMin, scaleByW, scaleByH), phoneLandscape ? 0.42 : portraitCompact ? 0.40 : compact ? 0.48 : isMobileCompactLayout() ? 0.52 : 0.58, 1.2);
   }
   function getArenaLayout(scale=computeArenaScale()){
     const footballMode = isFootballMode();
     const hockeyMode = isHockeyMode();
     const fieldMode = footballMode || hockeyMode;
     const circleStage = (!fieldMode && config.stage === "CIRCLE");
-    const compact = isPhoneViewport() || isShortViewport();
+    const phoneCompact = isPhoneViewport();
+    const compact = phoneCompact || isShortViewport();
     const phoneLandscape = isPhoneLandscapeViewport();
+    const portraitCompact = phoneCompact && !phoneLandscape;
     const plat = { x:0, y:0, w:0, h:0, cx:0, cy:0, radius:0, shape:"rect" };
 
     if (fieldMode){
-      // Wide field-sport arena (east-west).
-      plat.w = Math.floor(clamp(W * (phoneLandscape ? 0.97 : compact ? 0.96 : 0.92), compact ? 420 : 520, W - (compact ? 18 : 44)));
-      plat.h = Math.floor(clamp(H * (phoneLandscape ? 0.36 : compact ? 0.42 : 0.46), phoneLandscape ? 150 : compact ? 180 : 230, Math.min(phoneLandscape ? 250 : compact ? 330 : 430, H - (phoneLandscape ? 110 : compact ? 120 : 210))));
+      // Sports field sized by a stable aspect ratio instead of an arbitrary squat box.
+      const fieldAspect = footballMode ? 2.24 : 2.08;
+      const availW = Math.floor(W - (portraitCompact ? 48 : compact ? 18 : 44));
+      const availH = Math.floor(Math.min(
+        portraitCompact ? 170 : phoneLandscape ? 250 : compact ? 330 : 430,
+        H - (portraitCompact ? 240 : phoneLandscape ? 110 : compact ? 120 : 210)
+      ));
+      let fieldW = Math.floor(Math.min(
+        availW,
+        availH * fieldAspect,
+        W * (phoneLandscape ? 0.97 : portraitCompact ? 0.78 : compact ? 0.96 : 0.92)
+      ));
+      let fieldH = Math.floor(fieldW / fieldAspect);
+      if (fieldH > availH){
+        fieldH = availH;
+        fieldW = Math.floor(fieldH * fieldAspect);
+      }
+      plat.w = Math.floor(clamp(fieldW, portraitCompact ? 240 : compact ? 420 : 520, availW));
+      plat.h = Math.floor(clamp(fieldH, portraitCompact ? 110 : compact ? 180 : 230, availH));
       plat.x = Math.floor(W/2 - plat.w/2);
-      plat.y = Math.floor(H/2 - plat.h/2 + (phoneLandscape ? 2 : compact ? 10 : 26));
+      plat.y = Math.floor(H/2 - plat.h/2 + (phoneLandscape ? 2 : portraitCompact ? 72 : compact ? 10 : 26));
       plat.cx = plat.x + plat.w/2;
       plat.cy = plat.y + plat.h/2;
       plat.radius = 0;
@@ -4614,16 +4637,16 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const phonePortrait = isPhoneViewport() && !phoneLandscape;
     const compact = isShortViewport() || isPhoneViewport();
     const bw = Math.min(
-      phoneLandscape ? 250 : phonePortrait ? 296 : compact ? 320 : 360,
-      Math.floor(W * (phoneLandscape ? 0.42 : phonePortrait ? 0.72 : compact ? 0.56 : 0.50))
+      phoneLandscape ? 250 : phonePortrait ? 272 : compact ? 320 : 360,
+      Math.floor(W * (phoneLandscape ? 0.42 : phonePortrait ? 0.66 : compact ? 0.56 : 0.50))
     );
-    const bh = phoneLandscape ? 34 : phonePortrait ? 42 : compact ? 46 : 54;
+    const bh = phoneLandscape ? 34 : phonePortrait ? 38 : compact ? 46 : 54;
     const x = Math.floor(W/2 - bw/2);
-    let y = Math.floor(H * (phoneLandscape ? 0.25 : phonePortrait ? 0.33 : compact ? 0.40 : 0.48));
+    let y = Math.floor(H * (phoneLandscape ? 0.25 : phonePortrait ? 0.27 : compact ? 0.40 : 0.48));
     const quickW = Math.floor(bw * (phoneLandscape ? 1.00 : 1.10));
     const quickH = Math.floor(bh * (phoneLandscape ? 1.00 : 1.10));
     const quickX = Math.floor(W/2 - quickW/2);
-    const rowGap = phoneLandscape ? 42 : phonePortrait ? 50 : compact ? 58 : 70;
+    const rowGap = phoneLandscape ? 42 : phonePortrait ? 44 : compact ? 58 : 70;
 
     addButton("quick", quickX, y, quickW, quickH, "START", () => {
       startNewGame({ players:1, mode:"KNOCKOUT", difficulty:"NORMAL", stage:"CLASSIC", series:"BO3", speed:"1X", modifier:"STANDARD" });
@@ -4647,15 +4670,16 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     if (isSetupCompactLayout()){
       const phoneLandscape = isPhoneLandscapeViewport();
       const phoneViewport = isPhoneViewport();
-      const panelW = Math.min(760, Math.floor(W * 0.92));
-      const panelH = clamp(Math.floor(H - (phoneLandscape ? 38 : phoneViewport ? 78 : 150)), phoneLandscape ? 320 : 470, Math.max(phoneLandscape ? 320 : 470, H - (phoneLandscape ? 20 : 84)));
+      const narrow = W <= 430;
+      const panelW = Math.min(760, Math.floor(W * (narrow ? 0.96 : 0.92)));
+      const panelH = clamp(Math.floor(H - (phoneLandscape ? 38 : narrow ? 18 : phoneViewport ? 78 : 150)), phoneLandscape ? 320 : narrow ? 350 : 470, Math.max(phoneLandscape ? 320 : narrow ? 350 : 470, H - (phoneLandscape ? 20 : 34)));
       const px = Math.floor(W/2 - panelW/2);
       const py = Math.floor(phoneViewport
-        ? clamp(phoneLandscape ? 14 : 28, 12, Math.max(12, H - panelH - 16))
+        ? clamp(phoneLandscape ? 14 : 18, 10, Math.max(10, H - panelH - 10))
         : clamp(H * 0.17, 84, Math.max(84, H - panelH - 36)));
-      const pad = 18;
+      const pad = narrow ? 14 : 18;
       const headerH = phoneViewport ? 12 : 34;
-      const footerH = phoneLandscape ? 72 : 88;
+      const footerH = phoneLandscape ? 72 : narrow ? 62 : 88;
       const viewX = px + pad;
       const viewY = py + headerH;
       const viewW = panelW - pad*2 - 8;
@@ -4687,7 +4711,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         : Math.max(78, Math.floor(H * 0.16));
       const pad = 18;
       const headerH = phoneViewport ? 12 : 30;
-      const footerH = phoneLandscape ? 76 : phoneViewport ? 88 : 28;
+      const footerH = phoneLandscape ? 94 : phoneViewport ? 104 : 88;
       const viewX = px + pad;
       const viewY = py + headerH;
       const viewW = panelW - pad*2 - 8;
@@ -4700,7 +4724,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const py = Math.floor(clamp(H * 0.21, 70, Math.max(70, H - panelH - 120)));
     const pad = 22;
     const headerH = 40;
-    const footerH = 18;
+    const footerH = 88;
     const viewX = px + pad;
     const viewY = py + headerH;
     const viewW = panelW - pad*2 - 10;
@@ -4708,19 +4732,29 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     return { panelW, panelH, px, py, pad, viewX, viewY, viewW, viewH };
   }
   function getCreditsLayout(){
-    const compact = isPhoneViewport() || isShortViewport();
+    const phoneViewport = isPhoneViewport();
+    const compact = phoneViewport || isShortViewport();
     const phoneLandscape = isPhoneLandscapeViewport();
-    const panelW = Math.min(760, Math.floor(W * (compact ? 0.92 : 0.90)));
-    const panelH = compact
+    const desktopCompact = !phoneViewport && isShortViewport();
+    const panelW = phoneViewport
+      ? Math.min(760, Math.floor(W * 0.92))
+      : desktopCompact
+      ? Math.min(700, Math.floor(W * 0.80))
+      : Math.min(720, Math.floor(W * 0.82));
+    const panelH = phoneViewport
       ? clamp(Math.floor(H - (phoneLandscape ? 36 : 108)), 180, Math.max(180, H - (phoneLandscape ? 18 : 48)))
-      : clamp(Math.floor(H * 0.40), 240, 320);
+      : desktopCompact
+      ? clamp(Math.floor(H * 0.44), 230, 290)
+      : clamp(Math.floor(H * 0.34), 240, 300);
     const px = Math.floor(W/2 - panelW/2);
-    const py = compact
+    const py = phoneViewport
       ? Math.floor(clamp(phoneLandscape ? 14 : 34, 12, Math.max(12, H - panelH - 18)))
-      : Math.floor(clamp(H * 0.30, 104, Math.max(104, H - panelH - 180)));
+      : desktopCompact
+      ? Math.floor(clamp(H * 0.28, 74, Math.max(74, H - panelH - 72)))
+      : Math.floor(clamp(H * 0.30, 92, Math.max(92, H - panelH - 120)));
     const pad = compact ? 18 : 22;
-    const headerH = compact ? 12 : 64;
-    const footerH = compact ? (phoneLandscape ? 72 : 86) : 20;
+    const headerH = phoneViewport ? 12 : desktopCompact ? 52 : 58;
+    const footerH = phoneViewport ? (phoneLandscape ? 72 : 86) : 88;
     const viewX = px + pad;
     const viewY = py + headerH;
     const viewW = panelW - pad*2 - 10;
@@ -4749,24 +4783,25 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     if (!mapUnlocks.doors && config.stage === "DOORS") config.stage = "CLASSIC";
     const { panelW, panelH, px, py, pad, viewX, viewY, viewW, viewH } = getSetupLayout();
     const compact = isSetupCompactLayout();
+    const narrow = W <= 430;
 
     let y = viewY + (compact ? 6 : 0) - setupScrollY;
     function section(label){
       setupSectionHeaders.push({ label, y });
-      y += compact ? 14 : 18;
+      y += compact ? 18 : 22;
     }
 
     function row(btns, cols=btns.length){
-      const gap = compact ? 8 : 12;
-      const rowInset = compact ? 6 : 0;
+      const gap = compact ? (narrow ? 6 : 8) : 12;
+      const rowInset = compact ? (narrow ? 8 : 6) : 0;
       const bw = (viewW - rowInset * 2 - gap*(cols-1)) / cols;
-      const bh = compact ? 38 : 46;
+      const bh = compact ? (narrow ? 34 : 38) : 46;
       let x = viewX + rowInset;
       for (const b of btns){
         addButton(b.id, x, y, bw, bh, b.label, b.onClick, b.enabled!==false, b.selected===true);
         x += bw + gap;
       }
-      y += bh + (compact ? 8 : 14);
+      y += bh + (compact ? (narrow ? 6 : 8) : 14);
     }
 
     // PLAYERS
@@ -4774,7 +4809,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       { id:"players_1p", label:"ONE PLAYER", onClick:()=>{ config.players=1; buildSetupUI(); beep(600,0.03,"square",0.03); }, enabled:true, selected:(config.players===1) },
       { id:"players_2p", label:"TWO PLAYER", onClick:()=>{ config.players=2; buildSetupUI(); beep(600,0.03,"square",0.03); }, enabled:true, selected:(config.players===2) }
     ], 2);
-    y += compact ? 8 : 16;
+    y += compact ? (narrow ? 6 : 8) : 16;
 
     // GAME TYPE
     section("MODE");
@@ -4783,7 +4818,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       { id:"mode_football", label:"FOOTBALL", onClick:()=>{ config.mode="FOOTBALL"; config.stage="CLASSIC"; buildSetupUI(); beep(620,0.04,"square",0.035); }, enabled:true, selected:(isFootballMode()) },
       { id:"mode_keepaway", label:"KEEP AWAY", onClick:()=>{ config.mode="KEEP_AWAY"; config.stage="CLASSIC"; buildSetupUI(); beep(600,0.04,"triangle",0.035); }, enabled:true, selected:(isKeepAwayMode()) }
     ], 3);
-    y += compact ? 1 : 4;
+    y += compact ? (narrow ? 0 : 1) : 4;
 
     // DIFFICULTY (single-player only)
     section("DIFFICULTY");
@@ -4792,7 +4827,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       { id:"diff_norm", label:"NORMAL", onClick:()=>{ config.difficulty="NORMAL"; buildSetupUI(); beep(520,0.03,"triangle",0.03); }, enabled:isSinglePlayerMode(), selected:(isSinglePlayerMode() && config.difficulty==="NORMAL") },
       { id:"diff_hard", label:"HARD", onClick:()=>{ config.difficulty="HARD"; buildSetupUI(); beep(520,0.03,"triangle",0.03); }, enabled:isSinglePlayerMode(), selected:(isSinglePlayerMode() && config.difficulty==="HARD") }
     ]);
-    y += compact ? 1 : 4;
+    y += compact ? (narrow ? 0 : 1) : 4;
 
     // STAGE
     const stageEnabled = isKnockoutMode();
@@ -4808,7 +4843,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       { id:"stage_doors", label:"DOORS", onClick:()=>{ if (!mapUnlocks.doors) return; config.stage="DOORS"; buildSetupUI(); beep(470,0.03,"square",0.03); }, enabled:(stageEnabled && mapUnlocks.doors), selected:(stageEnabled && config.stage==="DOORS") }
     ], 3);
 
-    y += compact ? 1 : 4;
+    y += compact ? (narrow ? 0 : 1) : 4;
     section("ROUND");
     row([
       { id:"ser_bo3", label:"3", onClick:()=>{ config.series="BO3"; buildSetupUI(); beep(480,0.03,"triangle",0.03); }, enabled:true, selected:(config.series==="BO3") },
@@ -4816,7 +4851,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       { id:"ser_bo9", label:"9", onClick:()=>{ config.series="BO9"; buildSetupUI(); beep(480,0.03,"triangle",0.03); }, enabled:true, selected:(config.series==="BO9") }
     ]);
 
-    y += compact ? 1 : 4;
+    y += compact ? (narrow ? 0 : 1) : 4;
     section("MODIFIERS");
 
     // SPEED
@@ -4833,19 +4868,19 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       { id:"mod_bouncy", label:"BOUNCY MODE", onClick:()=>{ config.modifier="BOUNCY"; buildSetupUI(); beep(560,0.03,"triangle",0.03); }, enabled:true, selected:(config.modifier==="BOUNCY") }
     ], 2);
 
-    y += compact ? 14 : 28;
-    const contentBottom = y + setupScrollY + 56;
+    y += compact ? (narrow ? 10 : 14) : 28;
+    const contentBottom = y + setupScrollY + (narrow ? 44 : 56);
     setupScrollMax = Math.max(0, contentBottom - (viewY + viewH));
     setupScrollY = clamp(setupScrollY, 0, setupScrollMax);
 
     // BACK / BEGIN (responsive width, no overlap on narrow viewports)
-    const footerGap = compact ? 10 : 14;
+    const footerGap = compact ? (narrow ? 8 : 10) : 14;
     const footerW = Math.min(viewW, 720);
     const footerX = Math.floor(viewX + (viewW - footerW) * 0.5);
     const bw2 = Math.floor((footerW - footerGap) / 2);
-    const bh2 = compact ? 46 : 58;
+    const bh2 = compact ? (narrow ? 42 : 46) : 58;
     const bx1 = footerX;
-    const by = py + panelH - bh2 - (compact ? 16 : 22);
+    const by = py + panelH - bh2 - (compact ? (narrow ? 12 : 16) : 22);
     addButton("setup_back", bx1, by, bw2, bh2, "BACK", () => { state = State.MENU; buildMenuUI(); beep(300,0.04,"square",0.03); });
     addButton("setup_begin", bx1 + bw2 + footerGap, by, bw2, bh2, "BEGIN", () => { startNewGame({ players: config.players, mode: config.mode, difficulty: config.difficulty, stage: config.stage, series: config.series, speed: config.speed, modifier: config.modifier }); beep(740,0.05,"triangle",0.04); });
   }
@@ -4875,11 +4910,9 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     ui.buttons = [];
     const compact = isPhoneViewport() || isShortViewport();
     const { py, panelH, viewW } = getCreditsLayout();
-    const bw = compact ? Math.min(viewW, 320) : Math.min(280, Math.floor(W * 0.38));
+    const bw = compact ? Math.min(viewW, 320) : Math.min(300, Math.floor(viewW * 0.52));
     const bh = compact ? 44 : 50;
-    const by = compact
-      ? Math.floor(py + panelH - bh - 14)
-      : Math.floor(Math.min(H - bh - 34, py + panelH + 24));
+    const by = Math.floor(py + panelH - bh - (compact ? 14 : 18));
     creditsScrollY = clamp(creditsScrollY, 0, creditsScrollMax);
     addButton("back", Math.floor(W/2 - bw/2), by, bw, bh, "BACK", () => goTo(State.MENU));
   }
@@ -4937,25 +4970,26 @@ function lerp(a, b, t){ return a + (b - a) * t; }
 
 function buildPauseUI(){
     ui.pauseButtons = [];
-    const panelW = Math.min(560, Math.floor(W * 0.78));
-    const panelH = 412;
-    const bw = Math.min(360, Math.floor(panelW * 0.70));
-    const bh = 52;
+    const compact = isPhoneViewport() || isShortViewport();
+    const panelW = Math.min(560, Math.floor(W * (compact ? 0.88 : 0.78)));
+    const panelH = compact ? 320 : 412;
+    const bw = Math.min(compact ? 300 : 360, Math.floor(panelW * (compact ? 0.74 : 0.70)));
+    const bh = compact ? 42 : 52;
     const x = Math.floor(W/2 - bw/2);
     const py = Math.floor(H/2 - panelH/2);
-    let y = py + 120;
+    let y = py + (compact ? 88 : 120);
 
     const add = (id, yy, label, onClick) =>
       ui.pauseButtons.push({ id, x, y: yy, w: bw, h: bh, label, onClick, enabled: true });
 
-    add("pause_resume", y, "RESUME", () => resumeGame()); y += 62;
+    add("pause_resume", y, "RESUME", () => resumeGame()); y += compact ? 50 : 62;
     add("pause_restart_round", y, "RESTART ROUND", () => {
       if (state !== State.PAUSE) return;
       resetMatch();
       beep(360, 0.05, "square", 0.035);
       resumeGame();
-    }); y += 62;
-    add("pause_settings", y, "SETTINGS", () => { settingsBackState = State.PAUSE; helpBackState = null; state = State.SETTINGS; ui.buttons = []; buildSettingsUI(); }); y += 62;
+    }); y += compact ? 50 : 62;
+    add("pause_settings", y, "SETTINGS", () => { settingsBackState = State.PAUSE; helpBackState = null; state = State.SETTINGS; ui.buttons = []; buildSettingsUI(); }); y += compact ? 50 : 62;
     add("pause_menu", y, "MAIN MENU", () => { paused = false; settingsBackState = null; helpBackState = null; ui.pauseButtons = []; goTo(State.MENU); });
   }
 
@@ -5908,79 +5942,6 @@ for (let i = 0; i < all.length; i++){
 
     ctx.restore();
 
-    if (settings.devMode && isSinglePlayerMode() && u.team === 2 && u.aiPersonality){
-      const labelMap = {
-        AGGRESSIVE: "AGGRO",
-        DEFENDER: "DEFEND",
-        PREDICTOR: "PREDICT",
-        BALANCED: "BALANCE"
-      };
-      const label = labelMap[u.aiPersonality] || String(u.aiPersonality);
-      const tagMap = {
-        all_in_predict: "ALL-IN",
-        direct_far: "CHASE",
-        direct_mid: "PRESS",
-        finish_edge: "FINISH",
-        intercept: "CUT",
-        counter_lane: "READ",
-        counter_shoulder: "SHOULDER",
-        protect_lane: "PROTECT",
-        bodyguard: "GUARD",
-        bodyguard_hold: "HOLD",
-        bridge_trap: "TRAP",
-        bridge_guard: "BRIDGE",
-        door_guard: "DOOR",
-        door_trap: "TRAP",
-        pressure_finish: "PUNCH",
-        center_hold: "CENTER",
-        fallback: "RESET",
-        refine: "REFINE"
-      };
-      const actionLabel = tagMap[u.aiDecisionTag] || (u.aiDecisionTag ? String(u.aiDecisionTag).replace(/_/g, "-").slice(0, 10) : "");
-      const koText = `KO ${Math.round(clamp((u.aiKOChance || 0) * 100, 0, 100))}%`;
-      const riskText = `RISK ${Math.round(clamp((u.aiRiskChance || 0) * 100, 0, 100))}%`;
-      const statsLabel = `${koText} / ${riskText}`;
-      const padX = 8;
-      const labelY = u.y - u.r - 36;
-
-      ctx.save();
-      ctx.font = "700 11px ui-monospace, Menlo, Consolas, monospace";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      const textW = Math.ceil(ctx.measureText(label).width);
-      ctx.font = "700 9px ui-monospace, Menlo, Consolas, monospace";
-      const actionW = actionLabel ? Math.ceil(ctx.measureText(actionLabel).width) : 0;
-      const statsW = Math.ceil(ctx.measureText(statsLabel).width);
-      const boxW = Math.max(textW, actionW, statsW) + padX * 2;
-      const boxH = actionLabel ? 38 : 28;
-      const boxX = Math.round(u.x - boxW * 0.5);
-      const boxTop = Math.round(labelY - boxH * 0.5);
-
-      ctx.fillStyle = "rgba(0,8,4,0.82)";
-      ctx.strokeStyle = "rgba(0,228,102,0.80)";
-      ctx.lineWidth = 1.4;
-      ctx.shadowColor = "rgba(0,228,102,0.55)";
-      ctx.shadowBlur = 12;
-      roundRect(ctx, boxX, boxTop, boxW, boxH, 7);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = "rgba(225,255,239,0.96)";
-      ctx.font = "700 11px ui-monospace, Menlo, Consolas, monospace";
-      ctx.fillText(label, Math.round(u.x), Math.round(labelY - 10));
-      if (actionLabel){
-        ctx.globalAlpha = 0.88;
-        ctx.fillStyle = "rgba(165,255,206,0.92)";
-        ctx.font = "700 9px ui-monospace, Menlo, Consolas, monospace";
-        ctx.fillText(actionLabel, Math.round(u.x), Math.round(labelY + 1));
-      }
-      ctx.globalAlpha = 0.84;
-      ctx.fillStyle = "rgba(140,255,190,0.88)";
-      ctx.font = "700 8px ui-monospace, Menlo, Consolas, monospace";
-      ctx.fillText(statsLabel, Math.round(u.x), Math.round(labelY + 12));
-      ctx.restore();
-    }
   }
 
   function drawFootballBall(){
@@ -6046,12 +6007,13 @@ for (let i = 0; i < all.length; i++){
     const sideLabel = isTwoPlayerMode() ? "P2" : "AI";
     const p1Pal = getTeamPalette(1);
     const p2Pal = getTeamPalette(2);
-    const compact = isPhoneViewport() || isShortViewport();
+    const compact = isPhoneViewport();
     const phoneLandscape = isPhoneLandscapeViewport();
-    const bw = Math.floor(clamp(p.w * (phoneLandscape ? 0.64 : compact ? 0.70 : 0.62), compact ? 280 : 340, compact ? 520 : 620));
+    const portraitCompact = compact && !phoneLandscape;
+    const bw = Math.floor(clamp(p.w * (phoneLandscape ? 0.64 : portraitCompact ? 0.82 : compact ? 0.70 : 0.62), portraitCompact ? 240 : compact ? 280 : 340, portraitCompact ? Math.min(W - 24, 420) : compact ? 520 : 620));
     const bh = phoneLandscape ? 36 : compact ? 42 : 48;
     const bx = Math.floor(W/2 - bw/2);
-    const by = Math.floor(Math.max(phoneLandscape ? 30 : compact ? 48 : 66, p.y - bh - (phoneLandscape ? 8 : compact ? 12 : 20)));
+    const by = Math.floor(portraitCompact ? 6 : Math.max(phoneLandscape ? 30 : compact ? 48 : 66, p.y - bh - (phoneLandscape ? 8 : compact ? 12 : 12)));
     const lx = Math.floor(bx + bw * 0.22);
     const rx = Math.floor(bx + bw * 0.78);
     const cx = Math.floor(bx + bw * 0.50);
@@ -6420,15 +6382,16 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
   function buildGameUI(){
     ui.buttons = [];
 
-    const compact = isPhoneViewport() || isShortViewport();
+    const compact = isPhoneViewport();
     const phoneLandscape = isPhoneLandscapeViewport();
+    const portraitCompact = compact && !phoneLandscape;
     const gap = compact ? 8 : 12;
     const totalW = Math.min(Math.floor(W * (compact ? 0.94 : 0.88)), Math.floor(game.platform.w * (compact ? 0.96 : 0.92)));
     const pauseW = clamp(Math.floor(totalW * (compact ? 0.20 : 0.22)), compact ? 74 : 110, compact ? 116 : 170);
     const bw = Math.floor((totalW - pauseW - gap*2) / 2);
-    const bh = phoneLandscape ? 30 : compact ? 36 : 44;
+    const bh = phoneLandscape ? 30 : portraitCompact ? 32 : compact ? 36 : 44;
     const x = Math.floor(W/2 - totalW/2);
-    const y = Math.floor(game.platform.y + game.platform.h + (phoneLandscape ? 4 : compact ? 12 : 22));
+    const y = Math.floor(game.platform.y + game.platform.h + (phoneLandscape ? 4 : portraitCompact ? 8 : compact ? 12 : 22));
 
     addButton("primary", x, y, bw, bh, "START", () => {
       if (isSinglePlayerMode()){
@@ -6523,14 +6486,31 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     if (!onboarding.active) return;
     const tutorial = getOnboardingTutorial(onboarding.mode || onboardingModeKey());
     const compact = isPhoneViewport() || isShortViewport();
-    const drawWrappedBlock = (text, x, y, maxWidth, lineHeight) => {
+    const measureWrappedLines = (text, maxWidth) => {
       const words = String(text).split(/\s+/);
       let line = "";
       let lines = 0;
       for (let i = 0; i < words.length; i++){
         const test = line ? `${line} ${words[i]}` : words[i];
         if (ctx.measureText(test).width > maxWidth && line){
-          ctx.fillText(line, x, y + lines * lineHeight);
+          line = words[i];
+          lines++;
+        } else {
+          line = test;
+        }
+      }
+      if (line) lines++;
+      return lines;
+    };
+    const drawWrappedBlock = (text, x, y, maxWidth, lineHeight, align="left") => {
+      const words = String(text).split(/\s+/);
+      let line = "";
+      let lines = 0;
+      for (let i = 0; i < words.length; i++){
+        const test = line ? `${line} ${words[i]}` : words[i];
+        if (ctx.measureText(test).width > maxWidth && line){
+          const drawX = (align === "center") ? (x + maxWidth * 0.5) : x;
+          ctx.fillText(line, drawX, y + lines * lineHeight);
           line = words[i];
           lines++;
         } else {
@@ -6538,7 +6518,8 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
         }
       }
       if (line){
-        ctx.fillText(line, x, y + lines * lineHeight);
+        const drawX = (align === "center") ? (x + maxWidth * 0.5) : x;
+        ctx.fillText(line, drawX, y + lines * lineHeight);
         lines++;
       }
       return lines;
@@ -6548,22 +6529,50 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     ctx.fillStyle = "rgba(0,0,0,0.88)";
     ctx.fillRect(0, 0, W, H);
 
-    const pw = Math.min(compact ? 760 : 760, Math.floor(W * (compact ? 0.92 : 0.90)));
-    const ph = clamp(Math.floor(H * (compact ? 0.62 : 0.56)), compact ? 360 : 330, compact ? 520 : 460);
+    const narrow = W <= 430;
+    const pw = Math.min(compact ? 760 : 760, Math.floor(W * (narrow ? 0.94 : compact ? 0.92 : 0.90)));
     const px = Math.floor(W/2 - pw/2);
-    const py = Math.floor(H/2 - ph/2);
-    const innerPad = compact ? 22 : 34;
+    const innerPad = narrow ? 18 : compact ? 22 : 34;
     const bodyX = px + innerPad;
     const bodyW = pw - innerPad * 2;
-    const titleFont = compact ? 27 : 32;
-    const subtitleFont = compact ? 13 : 15;
-    const bodyFont = compact ? 12 : 14;
-    const titleY = py + (compact ? 46 : 52);
-    const subtitleY = py + (compact ? 78 : 84);
-    const tipsTop = py + (compact ? 112 : 126);
-    const lineHeight = compact ? 20 : 22;
-    const tipGap = compact ? 9 : 12;
-    const ctaY = py + ph - (compact ? 28 : 34);
+    const titleFont = narrow ? 22 : compact ? 27 : 32;
+    const subtitleFont = narrow ? 12 : compact ? 13 : 15;
+    const bodyFont = narrow ? 11 : compact ? 12 : 14;
+    const ctaFont = compact ? 14 : 16;
+    const lineHeight = narrow ? 15 : compact ? 20 : 22;
+    const tipGap = narrow ? 4 : compact ? 9 : 12;
+    const topPad = narrow ? 22 : compact ? 30 : 34;
+    const titleToSubtitle = narrow ? 18 : compact ? 24 : 28;
+    const subtitleToTips = narrow ? 12 : compact ? 18 : 22;
+    const ctaTopGap = narrow ? 16 : compact ? 22 : 36;
+    const bottomPad = narrow ? 20 : compact ? 28 : 34;
+    ctx.save();
+    ctx.font = `700 ${subtitleFont}px ui-monospace, Menlo, Consolas, monospace`;
+    const subtitleLines = measureWrappedLines(tutorial.subtitle, bodyW);
+    ctx.font = `${bodyFont}px ui-monospace, Menlo, Consolas, monospace`;
+    let tipsHeight = 0;
+    for (const tip of tutorial.tips){
+      tipsHeight += measureWrappedLines(tip, bodyW) * lineHeight + tipGap;
+    }
+    if (tutorial.tips.length) tipsHeight -= tipGap;
+    ctx.restore();
+    const ctaBlockH = ctaFont + (compact ? 4 : 6);
+    const contentH =
+      topPad +
+      titleFont +
+      titleToSubtitle +
+      subtitleLines * lineHeight +
+      subtitleToTips +
+      tipsHeight +
+      ctaTopGap +
+      ctaBlockH +
+      bottomPad;
+    const ph = clamp(contentH, narrow ? 220 : compact ? 260 : 280, narrow ? Math.min(360, H - 32) : compact ? Math.min(460, H - 32) : 460);
+    const py = Math.floor(clamp(H/2 - ph/2, 16, Math.max(16, H - ph - 16)));
+    const titleY = py + topPad + titleFont * 0.5;
+    const subtitleY = py + topPad + titleFont + titleToSubtitle;
+    const tipsTop = subtitleY + subtitleLines * lineHeight + subtitleToTips;
+    const ctaY = py + ph - bottomPad - ctaFont * 0.5;
     drawPanel(px, py, pw, ph);
 
     ctx.textAlign = "center";
@@ -6577,20 +6586,20 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     ctx.shadowBlur = 0;
     ctx.fillStyle = "rgba(175,255,214,0.92)";
     ctx.font = `700 ${subtitleFont}px ui-monospace, Menlo, Consolas, monospace`;
-    ctx.textAlign = "left";
+    ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    const subtitleLines = drawWrappedBlock(tutorial.subtitle, bodyX, subtitleY, bodyW, lineHeight);
+    drawWrappedBlock(tutorial.subtitle, bodyX, subtitleY, bodyW, lineHeight, "center");
 
     ctx.fillStyle = "rgba(217,255,239,0.90)";
     ctx.font = `${bodyFont}px ui-monospace, Menlo, Consolas, monospace`;
     let y = Math.max(tipsTop, subtitleY + subtitleLines * lineHeight + 14);
     for (const tip of tutorial.tips){
-      const lineCount = drawWrappedBlock(tip, bodyX, y, bodyW, lineHeight);
+      const lineCount = drawWrappedBlock(tip, bodyX, y, bodyW, lineHeight, "center");
       y += lineCount * lineHeight + tipGap;
     }
 
     ctx.fillStyle = "rgba(0,255,152,0.94)";
-    ctx.font = `700 ${compact ? 14 : 16}px ui-monospace, Menlo, Consolas, monospace`;
+    ctx.font = `700 ${ctaFont}px ui-monospace, Menlo, Consolas, monospace`;
     ctx.shadowColor = "rgba(0,228,102,0.70)";
     ctx.shadowBlur = 10;
     ctx.textAlign = "center";
@@ -6759,8 +6768,9 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
   function drawSetup(t){
     drawNeonGrid(t);
     const { panelW, panelH, px, py, viewX, viewY, viewW, viewH } = getSetupLayout();
+    const compact = isSetupCompactLayout();
     if (!isPhoneViewport()){
-      drawTitle(isSetupCompactLayout() ? Math.max(34, py - 34) : Math.max(92, py - 72), "CUSTOM GAME");
+      drawTitle(isSetupCompactLayout() ? Math.max(34, py - 34) : Math.max(72, py - 92), "CUSTOM GAME");
     }
 
     drawPanel(px, py, panelW, panelH);
@@ -6797,8 +6807,8 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       const midX = viewX + viewW * 0.5;
       const leftEnd = viewX + 10;
       const rightEnd = viewX + viewW - 10;
-      const lineY = hy + 8;
-      const gap = 58;
+      const lineY = hy + 9;
+      const gap = 74;
 
       ctx.globalAlpha = 0.82;
       ctx.strokeStyle = "rgba(0,228,102,0.36)";
@@ -6813,7 +6823,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       ctx.stroke();
 
       ctx.shadowBlur = 0;
-      ctx.font = `700 12px ${FONT}`;
+      ctx.font = `700 ${compact ? 14 : 15}px ${FONT}`;
       ctx.fillStyle = "rgba(0,255,152,0.96)";
       ctx.fillText(h.label, midX, hy);
     }
@@ -6829,14 +6839,6 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       }
     }
 
-    if (!isSetupCompactLayout()){
-      ctx.save();
-      ctx.fillStyle = "rgba(0,228,102,0.45)";
-      ctx.font = `12px ${FONT}`;
-      ctx.textAlign = "center";
-      ctx.fillText("ESC / BACK TO RETURN", W/2, py + panelH + 24);
-      ctx.restore();
-    }
   }
 
   function drawSettings(t){
@@ -6850,10 +6852,9 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     const compact = isMobileCompactLayout() || isShortViewport();
 
     const rowX = viewX;
-    let rowY = viewY + (compact ? 176 : 186) - settingsScrollY;
+    let rowY = viewY + (compact ? 114 : 124) - settingsScrollY;
     let soundSlider = null;
     let musicSlider = null;
-    let devToggle = null;
 
     const hitTargets = [];
     const drawColorSection = (label, team, yStart) => {
@@ -6907,7 +6908,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       }
 
       y += Math.ceil(TEAM_COLOR_ORDER.length / cols) * (cellH + (compact ? 8 : 10));
-      return y + (team === 2 ? (compact ? 34 : 24) : 10);
+      return y + (team === 2 ? (compact ? 54 : 38) : 14);
     };
 
     const mx = input.x, my = input.y;
@@ -6918,12 +6919,12 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
 
     soundSlider = drawVolumeSliderRow(rowX, viewY + 20 - settingsScrollY, "SOUND", settings.soundVolume, viewW);
     musicSlider = drawVolumeSliderRow(rowX, viewY + 82 - settingsScrollY, "MUSIC", settings.musicVolume, viewW);
-    devToggle = drawToggleRow(rowX, viewY + 144 - settingsScrollY, "DEV MODE", settings.devMode, viewW);
     rowY = drawColorSection("PLAYER ONE", 1, rowY);
     rowY = drawColorSection("PLAYER TWO", 2, rowY);
     ctx.restore();
 
-    const contentBottom = rowY + settingsScrollY + (compact ? 18 : 8);
+    const footerClearance = compact ? 84 : 52;
+    const contentBottom = rowY + settingsScrollY + footerClearance;
     settingsScrollMax = Math.max(0, contentBottom - (viewY + viewH));
     settingsScrollY = clamp(settingsScrollY, 0, settingsScrollMax);
 
@@ -6975,10 +6976,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
       else if (settingsSliderDrag.key === "music") updateSliderValue(musicSlider, "music");
     }
     if (input.justUp){
-      if (devToggle && pointInRect(mx, my, devToggle)){
-        setDevModeEnabled(!settings.devMode);
-        clickSound();
-      } else if (pointInSettingsScrollArea(mx, my)){
+      if (pointInSettingsScrollArea(mx, my)){
         for (const h of hitTargets){
           if (!pointInRect(mx, my, h)) continue;
           const ok = setTeamColorPreference(h.team, h.key);
@@ -6993,8 +6991,6 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     }
 
     for (const b of getActiveButtons()) drawButton(b, mx, my);
-
-    if (!hasCoarsePointer()) drawFooterHint("ESC TO GO BACK");
     input.justUp = false;
     input.justDown = false;
   }
@@ -7003,7 +6999,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     drawNeonGrid(t);
     const { panelW, panelH, px, py, viewX, viewY, viewW, viewH } = getCreditsLayout();
     if (!isPhoneViewport()){
-      drawTitle(Math.floor(H * 0.18), "CREDITS");
+      drawTitle(isShortViewport() ? Math.max(56, py - 24) : Math.max(84, py - 44), "CREDITS");
     }
     drawPanel(px, py, panelW, panelH);
     creditsScrollMax = 0;
@@ -7012,19 +7008,19 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "rgba(217,255,239,0.94)";
     const compact = isPhoneViewport() || isShortViewport();
+    const lineGap = compact ? 52 : 62;
+    const stackY = viewY + Math.floor(viewH * 0.46);
+    ctx.fillStyle = "rgba(217,255,239,0.94)";
     ctx.font = compact ? "700 18px ui-monospace, Menlo, Consolas, monospace" : "700 22px ui-monospace, Menlo, Consolas, monospace";
-    ctx.fillText("Created by Aaron", W/2, viewY + Math.floor(viewH * (compact ? 0.34 : 0.38)));
+    ctx.fillText("Created by Aaron", W/2, stackY - lineGap * 0.5);
     ctx.font = compact ? "700 15px ui-monospace, Menlo, Consolas, monospace" : "700 18px ui-monospace, Menlo, Consolas, monospace";
     ctx.fillStyle = "rgba(175,255,214,0.90)";
-    ctx.fillText("Music: Arcade Ride by Vens Adams", W/2, viewY + Math.floor(viewH * (compact ? 0.62 : 0.62)));
+    ctx.fillText("Music: Arcade Ride by Vens Adams", W/2, stackY + lineGap * 0.5);
     ctx.restore();
 
     const mx = input.x, my = input.y;
     for (const b of getActiveButtons()) drawButton(b, mx, my);
-
-    if (!hasCoarsePointer()) drawFooterHint("ESC TO GO BACK");
   }
   function drawHelp(t){
     drawNeonGrid(t);
@@ -7148,35 +7144,28 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     ctx.restore();
 
     // bordered pause panel
-    const panelW = Math.min(560, Math.floor(W * 0.78));
-    const panelH = 412;
+    const compact = isPhoneViewport() || isShortViewport();
+    const panelW = Math.min(560, Math.floor(W * (compact ? 0.88 : 0.78)));
+    const panelH = compact ? 320 : 412;
     const px = Math.floor(W/2 - panelW/2);
-    const py = Math.floor(H/2 - panelH/2);
+    const py = Math.floor(clamp(H/2 - panelH/2, 16, Math.max(16, H - panelH - 16)));
 
     drawPanel(px, py, panelW, panelH);
 
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = "800 44px ui-monospace, Menlo, Consolas, monospace";
+    ctx.font = compact ? "800 30px ui-monospace, Menlo, Consolas, monospace" : "800 44px ui-monospace, Menlo, Consolas, monospace";
     ctx.fillStyle = COL_NEON;
     ctx.shadowColor = "rgba(0,228,102,0.75)";
     ctx.shadowBlur = 18;
-    ctx.fillText("PAUSED", W/2, py + 64);
+    ctx.fillText("PAUSED", W/2, py + (compact ? 46 : 64));
     ctx.restore();
 
     if (!ui.buttons || ui.buttons.length === 0) buildPauseUI();
 const mx = input.x, my = input.y;
     for (const b of getActiveButtons()) drawButton(b, mx, my);
 
-    if (!hasCoarsePointer()){
-      ctx.save();
-      ctx.fillStyle = "rgba(0,228,102,0.60)";
-      ctx.font = `12px ${FONT}`;
-      ctx.textAlign = "center";
-      ctx.fillText("ESC TO RESUME", W/2, py + panelH - 22);
-      ctx.restore();
-    }
   }
 
   function drawWin(t){
@@ -7283,6 +7272,7 @@ const mx = input.x, my = input.y;
     if (resizeReflowTimer) clearTimeout(resizeReflowTimer);
     resizeReflowTimer = setTimeout(() => {
       resizeReflowTimer = null;
+      resize();
       if (transition.active) return;
 
       if (state === State.GAME || state === State.PAUSE){
@@ -7311,6 +7301,10 @@ const mx = input.x, my = input.y;
   window.addEventListener("resize", scheduleResponsiveRelayout, { passive: true });
   window.visualViewport?.addEventListener("resize", scheduleResponsiveRelayout, { passive: true });
   window.visualViewport?.addEventListener("scroll", scheduleResponsiveRelayout, { passive: true });
+  window.addEventListener("pageshow", scheduleResponsiveRelayout, { passive: true });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) scheduleResponsiveRelayout();
+  });
 
   resetMatch();
   buildMenuUI();
