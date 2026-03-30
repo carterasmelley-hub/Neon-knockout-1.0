@@ -4492,15 +4492,44 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const horizon = H * 0.38; // used for perspective only (no visible line)
     const gridTop = horizon;
     const gridBottom = H + 120;
+    const tm = timeSec();
 
     ctx.save();
     ctx.fillStyle = COL_BG;
     ctx.fillRect(0, 0, W, H);
 
-    // Vignette
-    const g = ctx.createRadialGradient(W/2, H/2, 40, W/2, H/2, Math.max(W,H)*0.65);
+    // Dark blue-to-black sky gradient
+    const sky = ctx.createLinearGradient(0, 0, 0, horizon + H * 0.12);
+    sky.addColorStop(0, "rgba(6,18,42,0.96)");
+    sky.addColorStop(0.34, "rgba(4,11,28,0.76)");
+    sky.addColorStop(0.72, "rgba(2,6,14,0.26)");
+    sky.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, horizon + H * 0.12);
+
+    // Faint stars / sky noise
+    for (let i = 0; i < 52; i++){
+      const sx = ((i * 197.13) % 1) * W;
+      const sy = ((((i * 91.73) % 1) * 0.52) + 0.02) * horizon;
+      const pulse = 0.18 + 0.18 * Math.sin(tm * 0.45 + i * 1.73);
+      const r = (i % 7 === 0) ? 1.6 : 1.0;
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(190,220,255,${clamp(pulse, 0.08, 0.28)})`;
+      ctx.arc(sx, sy, r, 0, TAU);
+      ctx.fill();
+    }
+    for (let i = 0; i < 140; i++){
+      const nx = ((i * 73.19) % 1) * W;
+      const ny = (((i * 31.71) % 1) * 0.60) * horizon;
+      ctx.fillStyle = `rgba(128,170,220,${0.018 + (i % 5) * 0.003})`;
+      ctx.fillRect(Math.floor(nx), Math.floor(ny), 1, 1);
+    }
+
+    // Edge vignette
+    const g = ctx.createRadialGradient(W * 0.5, H * 0.44, Math.min(W, H) * 0.18, W * 0.5, H * 0.44, Math.max(W, H) * 0.72);
     g.addColorStop(0, "rgba(0,0,0,0)");
-    g.addColorStop(1, "rgba(0,0,0,0.65)");
+    g.addColorStop(0.72, "rgba(0,0,0,0.10)");
+    g.addColorStop(1, "rgba(0,0,0,0.44)");
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
@@ -4545,6 +4574,30 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     ng.addColorStop(1, "rgba(0,228,102,0.12)");
     ctx.fillStyle = ng;
     ctx.fillRect(0, gridTop, W, gridBottom - gridTop);
+
+    // Brighter horizon glow
+    const glow = ctx.createLinearGradient(0, horizon - 46, 0, horizon + 86);
+    glow.addColorStop(0, "rgba(0,0,0,0)");
+    glow.addColorStop(0.32, "rgba(0,228,102,0.09)");
+    glow.addColorStop(0.55, "rgba(60,210,255,0.06)");
+    glow.addColorStop(0.78, "rgba(0,228,102,0.12)");
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, horizon - 46, W, 132);
+
+    // Slow drifting particles
+    for (let i = 0; i < 18; i++){
+      const baseX = ((i * 137.91) % 1) * W;
+      const span = H * 0.78;
+      const yProg = (((i * 53.27) % 1) + tm * (0.020 + (i % 4) * 0.004)) % 1;
+      const px = baseX + Math.sin(tm * 0.42 + i * 1.91) * (10 + (i % 3) * 6);
+      const py = horizon + span - yProg * span;
+      const alpha = 0.06 + ((i % 5) * 0.012);
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(132,255,206,${alpha})`;
+      ctx.arc(px, py, 1.4 + (i % 2) * 0.6, 0, TAU);
+      ctx.fill();
+    }
 
     ctx.restore();
   }
