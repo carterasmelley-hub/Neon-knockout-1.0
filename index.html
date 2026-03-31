@@ -1173,7 +1173,6 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       ui.pressed = null;
       return;
     }
-
     if (draggedSetup || draggedSettings || draggedCredits || draggedHelp){
       ui.pressed = null;
       return;
@@ -1261,6 +1260,14 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const l = Math.hypot(x,y) || 1;
     return { x: x/l, y: y/l, l };
   }
+  const HOCKEY_PUCK_TUNING = Object.freeze({
+    glideFriction: 0.9935,
+    stopSpeed: 0.016,
+    unitRestitution: 0.86,
+    tangentFriction: 0.16,
+    boardRestitution: 0.90,
+    postRestitution: 0.88
+  });
   function resolveCircleCollision(a, b){
     // Pool-like collision for equal-mass discs:
     // - strong overlap separation (prevents "wrap/orbit")
@@ -1325,6 +1332,51 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     a.vy = va_n2*ny + va_t2*ty;
     b.vx = vb_n2*nx + vb_t2*tx;
     b.vy = vb_n2*ny + vb_t2*ty;
+    return Math.min(1, Math.abs(relN) / 240);
+  }
+  function resolvePuckUnitCollision(u, puck){
+    if (!u.alive || !puck.alive) return 0;
+
+    const dx = puck.x - u.x;
+    const dy = puck.y - u.y;
+    const rr = u.r + puck.r;
+    const dist2 = dx*dx + dy*dy;
+    if (dist2 >= rr*rr || dist2 === 0) return 0;
+
+    const tune = HOCKEY_PUCK_TUNING;
+    const dist = Math.sqrt(dist2);
+    const nx = dx / dist;
+    const ny = dy / dist;
+    const penetration = rr - dist;
+    const corr = Math.max(0, penetration - 0.01) * 0.5;
+
+    u.x -= nx * corr;
+    u.y -= ny * corr;
+    puck.x += nx * corr;
+    puck.y += ny * corr;
+
+    const tx = -ny, ty = nx;
+    const ua_n = u.vx*nx + u.vy*ny;
+    const pb_n = puck.vx*nx + puck.vy*ny;
+    const ua_t = u.vx*tx + u.vy*ty;
+    const pb_t = puck.vx*tx + puck.vy*ty;
+    const relN = pb_n - ua_n;
+    if (relN > 0) return 0;
+
+    const e = tune.unitRestitution;
+    const ua_n2 = (ua_n + pb_n - e*(ua_n - pb_n)) * 0.5;
+    const pb_n2 = (ua_n + pb_n + e*(ua_n - pb_n)) * 0.5;
+
+    const relT = (pb_t - ua_t);
+    const maxF = Math.abs(pb_n2 - ua_n2) * tune.tangentFriction;
+    const jt = clamp(-relT * 0.5, -maxF, maxF);
+    const ua_t2 = ua_t - jt;
+    const pb_t2 = pb_t + jt;
+
+    u.vx = ua_n2*nx + ua_t2*tx;
+    u.vy = ua_n2*ny + ua_t2*ty;
+    puck.vx = pb_n2*nx + pb_t2*tx;
+    puck.vy = pb_n2*ny + pb_t2*ty;
     return Math.min(1, Math.abs(relN) / 240);
   }
 
@@ -1484,7 +1536,6 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       alive: true
     }
   };
-
   function beginPlayerGate(team, msg){
     game.gate = team;
     game.gateTeam = team;
@@ -2553,30 +2604,31 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const hk = game.hockey;
     const g = hockeyGoalMouth(p);
     const simdt = dt * 60;
+    const puckTune = HOCKEY_PUCK_TUNING;
 
     // Unit-to-puck collisions: players "shoot" by hitting the puck.
     for (let it = 0; it < 3; it++){
       for (const u of all){
         if (!u.alive) continue;
-        resolveCircleCollision(u, hk);
+        resolvePuckUnitCollision(u, hk);
       }
     }
 
-    // Integrate puck with mild damping so it glides.
+    // Integrate puck with shared fixed tuning so it behaves the same in every setup.
     hk.x += hk.vx * simdt;
     hk.y += hk.vy * simdt;
-    hk.vx *= Math.pow(0.9915, Math.max(1, simdt * 0.5));
-    hk.vy *= Math.pow(0.9915, Math.max(1, simdt * 0.5));
-    if (Math.hypot(hk.vx, hk.vy) < 0.018){ hk.vx = 0; hk.vy = 0; }
+    hk.vx *= Math.pow(puckTune.glideFriction, Math.max(1, simdt * 0.5));
+    hk.vy *= Math.pow(puckTune.glideFriction, Math.max(1, simdt * 0.5));
+    if (Math.hypot(hk.vx, hk.vy) < puckTune.stopSpeed){ hk.vx = 0; hk.vy = 0; }
 
     // Top/bottom boards.
     if (hk.y - hk.r < p.y){
       hk.y = p.y + hk.r;
-      hk.vy = Math.abs(hk.vy) * 0.90;
+      hk.vy = Math.abs(hk.vy) * puckTune.boardRestitution;
       beep(270, 0.02, "square", 0.018);
     } else if (hk.y + hk.r > p.y + p.h){
       hk.y = p.y + p.h - hk.r;
-      hk.vy = -Math.abs(hk.vy) * 0.90;
+      hk.vy = -Math.abs(hk.vy) * puckTune.boardRestitution;
       beep(270, 0.02, "square", 0.018);
     }
 
@@ -2588,7 +2640,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         return true;
       }
       hk.x = p.x + hk.r;
-      hk.vx = Math.abs(hk.vx) * 0.90;
+      hk.vx = Math.abs(hk.vx) * puckTune.boardRestitution;
       beep(300, 0.02, "square", 0.02);
     }
     // Right board / goal
@@ -2598,17 +2650,17 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         return true;
       }
       hk.x = p.x + p.w - hk.r;
-      hk.vx = -Math.abs(hk.vx) * 0.90;
+      hk.vx = -Math.abs(hk.vx) * puckTune.boardRestitution;
       beep(300, 0.02, "square", 0.02);
     }
 
     // Goal-post feel: bounce off the board segments outside mouth.
     if ((hk.x - hk.r) < g.leftX && !inGoalY){
       hk.x = g.leftX + hk.r;
-      hk.vx = Math.abs(hk.vx) * 0.88;
+      hk.vx = Math.abs(hk.vx) * puckTune.postRestitution;
     } else if ((hk.x + hk.r) > g.rightX && !inGoalY){
       hk.x = g.rightX - hk.r;
-      hk.vx = -Math.abs(hk.vx) * 0.88;
+      hk.vx = -Math.abs(hk.vx) * puckTune.postRestitution;
     }
 
     return false;
@@ -3916,6 +3968,29 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         }
       }
 
+      if ((isNormal || isHard) && assignedEnemy.target && am.intentMag > 0.16){
+        const threatLane = pointSegData(assignedEnemy.x, assignedEnemy.y, am.intentEnd.x, am.intentEnd.y, a.x, a.y);
+        const threatRadius = a.r + assignedEnemy.r + (isHard ? 40 : 28);
+        const laneThreat = clamp(1 - Math.sqrt(threatLane.d2) / threatRadius, 0, 1);
+        if (laneThreat > 0.10){
+          const dodgePerp = normalize(-am.intentDir.y, am.intentDir.x);
+          const sideDist = game.maxMoveDist * (isHard ? 0.56 : 0.46);
+          const forwardNudge = game.maxMoveDist * (isHard ? 0.12 : 0.08);
+          addCandidate(
+            out, a,
+            a.x + dodgePerp.x * sideDist + av.x * forwardNudge,
+            a.y + dodgePerp.y * sideDist + av.y * forwardNudge,
+            assignedEnemy, "dodge_side_a"
+          );
+          addCandidate(
+            out, a,
+            a.x - dodgePerp.x * sideDist + av.x * forwardNudge,
+            a.y - dodgePerp.y * sideDist + av.y * forwardNudge,
+            assignedEnemy, "dodge_side_b"
+          );
+        }
+      }
+
       if (bridges){
         const mySide = bridgeSideFor(a.x);
         const enemySide = am.bridgeSide;
@@ -4116,6 +4191,23 @@ function lerp(a, b, t){ return a + (b - a) * t; }
           score += laneBlock * (12 + 18 * diff.intercept) * personality.laneBlock;
         }
       }
+      if ((isNormal || isHard) && assignedEnemy.target && assignedMeta.intentMag > 0.12){
+        const incomingLane = pointSegData(assignedEnemy.x, assignedEnemy.y, assignedMeta.intentEnd.x, assignedMeta.intentEnd.y, a.x, a.y);
+        const dodgeThreatR = a.r + assignedEnemy.r + (isHard ? 42 : 30);
+        const dodgeThreat = clamp(1 - Math.sqrt(incomingLane.d2) / dodgeThreatR, 0, 1);
+        const dodgeTag = (
+          cand.tag === "dodge_side_a" ||
+          cand.tag === "dodge_side_b" ||
+          cand.tag === "counter_shoulder"
+        );
+        if (dodgeTag){
+          const sideDot = Math.abs(moveDir.x * assignedMeta.intentDir.y - moveDir.y * assignedMeta.intentDir.x);
+          score += dodgeThreat * sideDot * (isHard ? 44 : 26) * Math.max(personality.predict, personality.guard, 1);
+          if (cand.tag === "dodge_side_a" || cand.tag === "dodge_side_b"){
+            score += dodgeThreat * (isHard ? 20 : 10);
+          }
+        }
+      }
       // Discourage hard reversals; prefer engage or sidestep unless safety is critical.
       const towardAssigned = normalize(assignedPred.x - a.x, assignedPred.y - a.y);
       const engageDot = moveDir.x * towardAssigned.x + moveDir.y * towardAssigned.y;
@@ -4152,6 +4244,24 @@ function lerp(a, b, t){ return a + (b - a) * t; }
         if (cand.tag === "door_route" || cand.tag === "bridge_trap") score += 12;
       } else if (personality.name === "balanced"){
         if (cand.tag === "flank_up" || cand.tag === "flank_down" || cand.tag === "lane_cut") score += 8;
+      }
+      const isWideDodgeTag = (
+        cand.tag === "dodge_side_a" ||
+        cand.tag === "dodge_side_b" ||
+        cand.tag === "flank_up" ||
+        cand.tag === "flank_down" ||
+        cand.tag === "counter_shoulder"
+      );
+      if (isWideDodgeTag){
+        if (assignedDist > game.maxMoveDist * (isHard ? 0.88 : 0.98) && maxKOChance < 0.24){
+          score -= isHard ? 18 : 12;
+        }
+        if (engageDot < -0.04 && selfRisk < 0.34){
+          score -= isHard ? 26 : 16;
+        }
+        if (cand.tag === "flank_up" || cand.tag === "flank_down"){
+          score -= isHard ? 12 : 8;
+        }
       }
       if (isHard && cand.tag === "escape_deny" && assignedEnemy.target){
         const safeAnchor = safeAnchorFor(assignedEnemy);
@@ -4454,6 +4564,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
       if (state === State.GAME || state === State.PAUSE){
         state = State.WIN;
         ui.buttons = [];
+        ui.pauseButtons = [];
       }
     }, 250);
   }
@@ -4988,7 +5099,7 @@ function lerp(a, b, t){ return a + (b - a) * t; }
     const bh = 54;
     const x = Math.floor(W/2 - bw/2);
     let y = Math.floor(H * 0.60);
-    const primaryLabel = game.seriesOver ? "NEW GAME" : "NEXT MATCH";
+    const primaryLabel = game.seriesOver ? "NEW GAME" : "NEXT ROUND";
 
     addButton("again", x, y, bw, bh, primaryLabel, () => {
       if (game.seriesOver) startFreshSeries();
@@ -5268,7 +5379,6 @@ function updateGameplay(dt){
       return;
     }
 
-    
     // Reveal phase: show BOTH teams' planned arrows for a moment, then resolve.
     if (revealActive){
       revealTimer -= dt * simMul;
@@ -6689,9 +6799,7 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     ctx.restore();
   }
 
-  function drawGameplay(t){
-    ctx.save();
-
+  function drawGameplayScene(){
     drawPlatform();
     drawSportScoreboard();
     drawWalls();
@@ -6711,6 +6819,12 @@ function drawTargetMarker(tx, ty, color, alpha=1, dirX=1, dirY=0){
     drawHockeyPuck();
 
     drawHUD();
+  }
+
+  function drawGameplay(t){
+    ctx.save();
+
+    drawGameplayScene();
 
     // Buttons
     if (ui.buttons.length === 0) buildGameUI();
@@ -7222,13 +7336,16 @@ const mx = input.x, my = input.y;
   }
 
   function drawWin(t){
-    drawNeonGrid(t);
-
     const sideLabel = isTwoPlayerMode() ? "PLAYER 2" : "AI";
-    const winnerKey = game.seriesOver ? game.seriesWinner : game.winner;
-    const msg = (winnerKey === "player") ? "PLAYER 1 WINS" : `${sideLabel} WINS`;
     const sideScoreLabel = isTwoPlayerMode() ? "P2" : "AI";
     const compact = isShortViewport();
+    const winnerKey = game.seriesOver ? game.seriesWinner : game.winner;
+
+    drawNeonGrid(t);
+
+    const msg = game.seriesOver
+      ? ((winnerKey === "player") ? "PLAYER 1 WINS" : `${sideLabel} WINS`)
+      : ((winnerKey === "player") ? "PLAYER 1 WINS ROUND" : `${sideLabel} WINS ROUND`);
     const titleW = Math.min(540, Math.floor(W * 0.54));
     const titleH = compact ? 74 : 86;
     const scoreW = Math.min(420, Math.floor(W * 0.42));
@@ -7289,6 +7406,7 @@ const mx = input.x, my = input.y;
     if (state === State.SETTINGS && ui.buttons.length === 0 && !transition.active) buildSettingsUI();
     if (state === State.CREDITS && ui.buttons.length === 0 && !transition.active) buildCreditsUI();
     if (state === State.HELP && ui.buttons.length === 0 && !transition.active) buildHelpUI();
+    if (state === State.WIN && ui.buttons.length === 0 && !transition.active) buildWinUI();
 
     if (state === State.GAME){
       if (!paused && !needsLandscapeRotateOverlay()){
@@ -7348,7 +7466,9 @@ const mx = input.x, my = input.y;
       if (state === State.SETTINGS){ buildSettingsUI(); return; }
       if (state === State.CREDITS){ buildCreditsUI(); return; }
       if (state === State.HELP){ buildHelpUI(); return; }
-      if (state === State.WIN){ buildWinUI(); }
+      if (state === State.WIN){
+        buildWinUI();
+      }
     }, 120);
   }
   window.addEventListener("resize", scheduleResponsiveRelayout, { passive: true });
